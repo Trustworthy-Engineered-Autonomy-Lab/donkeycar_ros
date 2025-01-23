@@ -1,0 +1,6 @@
+build
+devel
+.vscode
+.catkin_workspace
+data
+models
