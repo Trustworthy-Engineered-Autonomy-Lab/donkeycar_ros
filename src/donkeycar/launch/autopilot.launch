@@ -39,8 +39,8 @@
 
     <node pkg="controller" type="nn_controller_node" name="nn_controller_node" output="screen">
         <param name="steer_ratio" value="-1"/>
-        <param name="model_file" value="$(find donkeycar)/models/0206.engine"/>
-        <param name="image_width" value="223"/>
+        <param name="model_file" value="$(find donkeycar)/models/0206.onnx"/>
+        <param name="image_width" value="224"/>
         <param name="image_height" value="144"/>
         <param name="grayscale" value="true"/>
     </node>
