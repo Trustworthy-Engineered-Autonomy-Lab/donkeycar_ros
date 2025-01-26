@@ -137,13 +137,12 @@ class PCA9685Actuator: public actuator::Actuator
     public:
     PCA9685Actuator(ros::NodeHandle& nodeHandle):actuator::Actuator(nodeHandle)
     {
-        std::string nodeName = ros::this_node::getName();
         
-        int busNumber = nodeHandle.param<int>(nodeName + "/bus_number", 1);
+        int busNumber = nodeHandle.param<int>("bus_number", 1);
     
         std::string busName = "/dev/i2c-" + std::to_string(busNumber);
 
-        pwmFreq = nodeHandle.param<int>(nodeName + "/pwm_frequency", 60);
+        pwmFreq = nodeHandle.param<int>("pwm_frequency", 60);
 
         if (pwmFreq < 25 || pwmFreq > 1500)
         {
@@ -154,16 +153,16 @@ class PCA9685Actuator: public actuator::Actuator
 
         pca9685.Open(busName, pwmFreq);
 
-        throttleChannel = nodeHandle.param<int>(nodeName + "/throttle_pwm_channel",0);
-        steerChannel = nodeHandle.param<int>(nodeName + "/steer_pwm_channel",1);
+        throttleChannel = nodeHandle.param<int>("throttle_pwm_channel",0);
+        steerChannel = nodeHandle.param<int>("steer_pwm_channel",1);
         
-        steerMinPW = nodeHandle.param<int>(nodeName + "/steer_min_pulsewidth", 1000);
-        steerMaxPW = nodeHandle.param<int>(nodeName + "/steer_max_pulsewidth", 2000);
-        steerMidPW = nodeHandle.param<int>(nodeName + "/steer_mid_pulsewidth", 1500);
+        steerMinPW = nodeHandle.param<int>("steer_min_pulsewidth", 1000);
+        steerMaxPW = nodeHandle.param<int>("steer_max_pulsewidth", 2000);
+        steerMidPW = nodeHandle.param<int>("steer_mid_pulsewidth", 1500);
 
-        throttleMinPW = nodeHandle.param<int>(nodeName + "/throttle_min_pulsewidth", 1000);
-        throttleMaxPW = nodeHandle.param<int>(nodeName + "/throttle_max_pulsewidth", 2000);
-        throttleMidPW = nodeHandle.param<int>(nodeName + "/throttle_mid_pulsewidth", 1500);
+        throttleMinPW = nodeHandle.param<int>("throttle_min_pulsewidth", 1000);
+        throttleMaxPW = nodeHandle.param<int>("throttle_max_pulsewidth", 2000);
+        throttleMidPW = nodeHandle.param<int>("throttle_mid_pulsewidth", 1500);
 
         if (throttleChannel < 0 || throttleChannel > 15)
         {
@@ -268,7 +267,7 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "pca9685_actuator_node");
 
     // Create a NodeHandle
-    ros::NodeHandle nh;
+    ros::NodeHandle nh("~");
 
 
     std::unique_ptr<PCA9685Actuator> pca9685ActuatorPtr;

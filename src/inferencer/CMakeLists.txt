@@ -25,6 +25,44 @@ set(TENSORRT_LIBRARIES
     ${NVONNXPARSER_LIBRARY}
 )
 
+find_program(Python3_EXECUTABLE NAMES python3)
+
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import tensorflow as tf; print(tf.sysconfig.get_include())"
+    OUTPUT_VARIABLE TENSORFLOW_INCLUDE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import tensorflow as tf; print(tf.sysconfig.get_lib())"
+    OUTPUT_VARIABLE TENSORFLOW_LIBRARY_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "from sysconfig import get_paths; print(get_paths()['include'])"
+    OUTPUT_VARIABLE PYTHON3_INCLUDE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+# execute_process(
+#     COMMAND ${Python3_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))"
+#     OUTPUT_VARIABLE PYTHON3_LIBRARY_PATH
+#     OUTPUT_STRIP_TRAILING_WHITESPACE
+# )
+
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('LDLIBRARY'))"
+    OUTPUT_VARIABLE PYTHON3_LIBRARIES
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+
+set(TENSORFLOW_LIBRARIES
+    ${TENSORFLOW_LIBRARY_DIR}/libtensorflow_framework.so.2
+    ${TENSORFLOW_LIBRARY_DIR}/python/_pywrap_tensorflow_internal.so
+)
+
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -112,7 +150,7 @@ set(TENSORRT_LIBRARIES
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
- INCLUDE_DIRS include
+ INCLUDE_DIRS include ${TENSORFLOW_INCLUDE_DIR}
  LIBRARIES inferencer
 #  CATKIN_DEPENDS roscpp
 #  DEPENDS system_lib
@@ -124,15 +162,19 @@ catkin_package(
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
+message(STATUS "TensorFlow include directory: ${TENSORFLOW_INCLUDE_DIR}")
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${CUDA_INCLUDE_DIRS}
+  ${TENSORFLOW_INCLUDE_DIR}
+  ${PYTHON3_INCLUDE_DIR}
 )
 
 ## Declare a C++ library
 add_library(${PROJECT_NAME}
   src/rt_inferencer.cpp
+  src/tf_inferencer.cpp
 )
 
 ## Add cmake target dependencies of the library
@@ -160,6 +202,8 @@ target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
   ${CUDA_LIBRARIES}
   ${TENSORRT_LIBRARIES}
+  ${TENSORFLOW_LIBRARIES}
+  ${PYTHON3_LIBRARIES}
 )
 
 #############

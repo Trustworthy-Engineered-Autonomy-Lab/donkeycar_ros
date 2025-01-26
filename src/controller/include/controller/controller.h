@@ -11,11 +11,11 @@ namespace controller{
         Controller() = delete;
         Controller(ros::NodeHandle& nodeHandle)
         {
-            cmdPub = nodeHandle.advertise<controller::motion_cmd>("motion_cmd",10);
+            cmdPub = nodeHandle.advertise<controller::motion_cmd>("/motion_cmd",10);
 
             nodeName = ros::this_node::getName();
-            throttleRatio = nodeHandle.param<float>(nodeName + "/throttle_ratio", 1);
-            steerRatio = nodeHandle.param<float>(nodeName + "/steer_ratio", 1);
+            throttleRatio = nodeHandle.param<float>("throttle_ratio", 1);
+            steerRatio = nodeHandle.param<float>("steer_ratio", 1);
 
             ROS_INFO("-----------------------------------------------");
             ROS_INFO(" Controller %s Configuration", nodeName.c_str());

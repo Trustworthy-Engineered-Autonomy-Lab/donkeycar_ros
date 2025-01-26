@@ -6,10 +6,35 @@
 
 namespace inferencer
 {
-    RTInferencer::RTInferencer(const boost::filesystem::path& filePath):
+    RTInferencer::RTInferencer(const ros::NodeHandle& nodeHandle):Inferencer(nodeHandle),
     buffers(1, nullptr)
     {
+        cudaError_t error = cudaStreamCreate(&stream);
+
+        if(error != cudaSuccess)
+        {
+            throw std::runtime_error("Failed to create cuda stream: " + std::string(cudaGetErrorString(error)));
+        }
+
+    }
+
+    RTInferencer::~RTInferencer()
+    {
+        cudaStreamDestroy(stream);
+
+        for(const auto& buffer:buffers)
+        {
+            if(buffer != nullptr)
+                cudaFree(buffer);
+        }
+    }
+
+    bool RTInferencer::loadModel(const std::string& modelName)
+    {
         bool needSerialize = false;
+
+
+        boost::filesystem::path filePath(modelName);
 
         std::string fileExt = filePath.extension().string();
 
@@ -37,40 +62,23 @@ namespace inferencer
         }
         else
         {
-            throw std::runtime_error("Unsupported model file format " + fileExt);
+            errorString = "Unsupported model file format " + fileExt;
+            return false;
         }
 
 
         if (engine == nullptr)
         {
-            throw std::runtime_error("Failed to create the engine " + errorString);
+            return false;
         }
 
         context.reset(engine->createExecutionContext());
 
         if(context == nullptr)
         {
-            throw std::runtime_error("Failed to create the context");
+            throw std::runtime_error("Failed to create tensorrt execution context");
         }
-
-        cudaError_t error = cudaStreamCreate(&stream);
-
-        if(error != cudaSuccess)
-        {
-            throw std::runtime_error("Failed to create cuda stream: " + std::string(cudaGetErrorString(error)));
-        }
-
-    }
-
-    RTInferencer::~RTInferencer()
-    {
-        cudaStreamDestroy(stream);
-
-        for(const auto& buffer:buffers)
-        {
-            if(buffer != nullptr)
-                cudaFree(buffer);
-        }
+        return true;
     }
 
     bool RTInferencer::infer()
@@ -91,7 +99,7 @@ namespace inferencer
 
         if(inputIndex == -1)
         {
-            errorString = "Invaild input index";
+            errorString = "Invaild input tensor name " + inputName;
             return 0;
         }
 
@@ -113,7 +121,7 @@ namespace inferencer
         int outputIndex = engine->getBindingIndex(outputName.c_str());
         if(outputIndex == -1)
         {
-            errorString = "Invaild output index";
+            errorString = "Invaild output tensor name " + outputName;
             return false;
         }
 
@@ -148,8 +156,7 @@ namespace inferencer
         cudaError_t error = cudaMallocManaged(&buffer, size);
         if(error != cudaSuccess)
         {
-            errorString = "Failed to allocate memory for the input tensor: " + std::string(cudaGetErrorString(error));
-            return nullptr;
+            throw std::runtime_error("Failed to allocate memory for the input tensor: " + std::string(cudaGetErrorString(error)));
         }
 
         buffers[index] = buffer;
@@ -188,28 +195,25 @@ namespace inferencer
         std::unique_ptr<nvinfer1::IBuilder, NvInferDeleter> builder{nvinfer1::createInferBuilder(logger)};
         if (builder == nullptr)
         {
-            errorString = "Failed to create the network builder";
-            return nullptr;
+            throw std::runtime_error("Failed to create tensorrt network builder");
         }
 
         const auto explicitBatch = 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
         std::unique_ptr<nvinfer1::INetworkDefinition, NvInferDeleter> network{builder->createNetworkV2(explicitBatch)};
         if (network == nullptr)
         {
-            errorString = "Failed to build the network";
-            return nullptr;
+            throw std::runtime_error("Failed to build tensorrt network");
         }
         
         std::unique_ptr<nvonnxparser::IParser, NvInferDeleter> parser{nvonnxparser::createParser(*network, logger)};
         if (parser == nullptr)
         {
-            errorString = "Failed to create the network parser";
-            return nullptr;
+            throw std::runtime_error("Failed to create onnx model parser");
         }
 
         if(!parser->parseFromFile(fileName.c_str(), static_cast<int32_t>(nvinfer1::ILogger::Severity::kVERBOSE)))
         {
-            errorString = "Failed to parse the model file";
+            errorString = "Failed to parse onnx model file " + fileName;
             return nullptr;
         }
 
@@ -217,21 +221,24 @@ namespace inferencer
         std::unique_ptr<nvinfer1::IBuilderConfig, NvInferDeleter> config{builder->createBuilderConfig()};
         if (config == nullptr)
         {
-            errorString = "Failed to create builder config";
-            return nullptr;
+            throw std::runtime_error("Failed to create tensorrt builder configuration");
         }
 
         size_t totalMemory;
         cudaError_t error = cudaMemGetInfo(nullptr, &totalMemory);
         if (error != cudaSuccess) 
         {
-            errorString = "Failed to get cuda memory info: " + std::string(cudaGetErrorString(error));
-            return nullptr;
+            throw std::runtime_error("Failed to get cuda memory info: " + std::string(cudaGetErrorString(error)));
         }
 
         config->setMaxWorkspaceSize(totalMemory/4);
 
         std::unique_ptr<nvinfer1::ICudaEngine, NvInferDeleter> engine{builder->buildEngineWithConfig(*network, *config)};
+        if(engine == nullptr)
+        {
+            errorString = "Failed to build tensorrt engine from onnx model " + fileName;
+            return nullptr;
+        }
 
         return std::move(engine);
     }
@@ -262,11 +269,15 @@ namespace inferencer
         std::unique_ptr<nvinfer1::IRuntime, NvInferDeleter> runtime{nvinfer1::createInferRuntime(logger)};
         if (runtime == nullptr)
         {
-            errorString = "Failed to create the runtime";
-            return nullptr;
+            throw std::runtime_error("Failed to create tensorrt runtime");
         }
 
         std::unique_ptr<nvinfer1::ICudaEngine, NvInferDeleter> engine{runtime->deserializeCudaEngine(engineData.data(), engineData.size())};
+        if (engine == nullptr)
+        {
+            errorString = "Failed to deserialize tensorrt engine file " + fileName;
+            return nullptr;
+        }
 
         return std::move(engine);
     }

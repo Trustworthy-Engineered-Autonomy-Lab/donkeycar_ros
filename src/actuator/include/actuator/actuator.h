@@ -14,7 +14,7 @@ namespace actuator{
         {
             std::string nodeName = ros::this_node::getName();
 
-            int controlFreq = nodeHandle.param<int>(nodeName + "/control_frequency",50);
+            int controlFreq = nodeHandle.param<int>("control_frequency",50);
             if(controlFreq < 0)
             {
                 ROS_WARN("Invaild control frequency %d, Using default value 50", controlFreq);
@@ -22,9 +22,9 @@ namespace actuator{
             
             timer = nodeHandle.createTimer(ros::Duration(1/controlFreq), boost::bind(&Actuator::timerCallback, this, boost::placeholders::_1));
 
-            cmdSub = nodeHandle.subscribe<controller::motion_cmd>("motion_cmd",10, 
+            cmdSub = nodeHandle.subscribe<controller::motion_cmd>("/motion_cmd",10, 
                 boost::bind(&Actuator::motionCallback, this, boost::placeholders::_1));
-            combinedCmdPub = nodeHandle.advertise<controller::motion_cmd>("combined_motion_cmd",10);
+            combinedCmdPub = nodeHandle.advertise<controller::motion_cmd>("/combined_motion_cmd",10);
         }
 
         virtual void actuate(float throttle, float steer)

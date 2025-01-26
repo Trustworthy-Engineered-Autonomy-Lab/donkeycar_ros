@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   cv_bridge
   inferencer
+  roslib
 )
 
 ## System dependencies are found with CMake's conventions

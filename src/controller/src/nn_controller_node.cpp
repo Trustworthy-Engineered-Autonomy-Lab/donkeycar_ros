@@ -1,4 +1,5 @@
 #include <ros/ros.h>
+#include <ros/package.h>
 #include <sensor_msgs/Image.h>
 
 #include <fstream>
@@ -18,117 +19,227 @@
 class NNController: controller::Controller
 {
     public:
-    NNController() = delete;
-    NNController(ros::NodeHandle& nodeHandle):controller::Controller(nodeHandle), steerAngle(nullptr)
+    NNController(ros::NodeHandle& nodeHandle):nh(nodeHandle),
+        status(Status::INIT_BACKEND),
+        Controller(nodeHandle)
     {
-
-        std::string nodeName = ros::this_node::getName();
-
-        boost::filesystem::path modelFile = nodeHandle.param<std::string>(nodeName + "/model_file", (boost::filesystem::current_path() / "model" / "model.onnx").string());
-        std::string inputName = nodeHandle.param<std::string>(nodeName + "/input_name", "input");
-        std::string outputName = nodeHandle.param<std::string>(nodeName + "/output_name", "outputs");
-        grayScale = nodeHandle.param<bool>(nodeName + "/grayscale", true);
-        imageWidth = nodeHandle.param<int>(nodeName + "/image_width", 1280);
-        imageHeight = nodeHandle.param<int>(nodeName + "/image_height", 720);
-
-        if(imageWidth <= 0)
-        {
-            ROS_WARN_ONCE("Invaild imageWidth. Using default value 1280");
-        }
-
-        if(imageHeight <= 0)
-        {
-            ROS_WARN_ONCE("Invaild imageHeight. Using defaule value 720");
-        }
-
-        ROS_INFO_ONCE("Setting up tensorrt environment for model %s, this may take a while, please be patient", modelFile.c_str());
-        infer = std::make_unique<inferencer::RTInferencer>(modelFile);
-
-        imageSub = nodeHandle.subscribe<sensor_msgs::Image>("/camera/image_raw", 10, boost::bind(&NNController::imageCallback, this, boost::placeholders::_1));
-
-        int imageStep = 0;  // Row stride in bytes
-        int imageType = 0;
-        if(grayScale)
-        {
-            imageStep = imageWidth * sizeof(float);
-            imageType = CV_32FC1;
-        }
-        else
-        {
-            imageStep = imageWidth * sizeof(float) * 3;
-            imageType = CV_32FC3;
-        }
-
-        void* inputBuffer = nullptr;
-        size_t inputBufferSize = infer->getInputBuffer(inputName, &inputBuffer);
-        if(inputBufferSize == 0)
-        {
-            throw std::runtime_error("Failed to allocate the input tensor: " + infer->getErrorString());
-        }
-        else if(inputBufferSize != imageStep * imageHeight)
-        {
-            throw std::runtime_error("Invaild input tensor size");
-        }
-
-        imageMat =  cv::Mat(imageHeight, imageWidth, imageType, inputBuffer, imageStep);
-
-
-        size_t outputBufferSize = infer->getOutputBuffer(outputName, &steerAngle);
-
-        if(outputBufferSize == 0)
-        {
-            throw std::runtime_error("Failed to allocate the output tensor: " + infer->getErrorString());
-        }
-        else if(outputBufferSize != sizeof(float))
-        {
-            throw std::runtime_error("Invaild output tensor size");
-        }
-
-        ROS_INFO("-----------------------------------------------");
-        ROS_INFO(" NN Configuration");
-        ROS_INFO("-----------------------------------------------");
-        ROS_INFO("%-20s | %-10s ", "Parameter", "Value");
-        ROS_INFO("---------------------+------------+------------");
-        ROS_INFO("%-20s | %-10d ", "Image width", imageWidth);
-        ROS_INFO("%-20s | %-10d ", "Image height", imageHeight);
-        ROS_INFO("%-20s | %-10d ", "Gray scale", grayScale);
-        ROS_INFO("-----------------------------------------------");
+        timer = nodeHandle.createTimer(ros::Duration(1), boost::bind(&NNController::run, this, boost::placeholders::_1));
     }
 
     ~NNController()
     {
-        
+
     }
 
     private:
-
-    
-
-    std::unique_ptr<inferencer::RTInferencer> infer;
-    ros::Subscriber imageSub;
-    cv::Mat imageMat;
-    void* steerAngle;
-    bool grayScale;
-    int imageWidth;
-    int imageHeight;
-
-
-    void imageCallback(const sensor_msgs::ImageConstPtr& msg)
+    enum class Status
     {
+        INIT_BACKEND,
+        LOAD_MODEL,
+        ALLOC_OUTPUT,
+        ALLOC_INPUT,
+        WAIT_IMAGE,
+        RUNNING,
+    };
 
-        if(msg->height != imageHeight || msg->width != imageWidth)
+    ros::NodeHandle& nh;
+    Status status;
+    std::unique_ptr<inferencer::Inferencer> inferencer;
+    cv::Mat imageMat;
+
+    ros::Subscriber imageSub;
+
+    void* outputBuffer;
+    void* inputBuffer;
+    size_t inputBufferSize;
+    size_t outputBufferSize;
+
+    ros::Timer timer;
+
+    cv::Rect roi;
+    bool grayScale;
+
+    void run(const ros::TimerEvent& event)
+    {
+        if(status == Status::INIT_BACKEND)
         {
-            ROS_WARN_ONCE("Image size does not match. Image size of the ros message is %d*%d while the input image size of the neural network is %d*%d", 
-                msg->width, msg->height, imageWidth, imageHeight);
+            std::string backend = nh.param<std::string>(ros::this_node::getName() + "/backend", "tensorflow");
+            inferencer.reset();
+            try
+            {
+                if(backend == "tensorrt")
+                {
+                    inferencer = std::make_unique<inferencer::RTInferencer>(nh);
+                }
+                else if(backend == "tensorflow")
+                {
+                    inferencer = std::make_unique<inferencer::TFInferencer>(nh);
+                }
+                else
+                {
+                    ROS_WARN_ONCE("Unsupported backend %s. Using default backend tensorflow", backend.c_str());
+                    inferencer = std::make_unique<inferencer::TFInferencer>(nh);
+                }
+            }
+            catch(const std::runtime_error& e)
+            {
+                ROS_ERROR_ONCE("Failed to initialize the %s backend: %s. Will retry",backend.c_str(),e.what());
+                return;
+            }
+
+            ROS_INFO("Successfully initialize %s backend", backend.c_str());
+            status = Status::LOAD_MODEL;
+        }
+        else if(status == Status::LOAD_MODEL)
+        {
+            std::string modelName;
+            if(!nh.getParam("model_file", modelName))
+            {
+                std::string defaultFolder = ros::package::getPath("donkeycar");
+                if(defaultFolder.empty())
+                {
+                    ROS_FATAL("Cound not find package donkeycar. Exiting");
+                    ros::shutdown();
+                    return;
+                }
+                modelName = (boost::filesystem::path(defaultFolder) / "models" / "model").string();
+            }
+
+            bool result;
+
+            try
+            {
+                result = inferencer->loadModel(modelName);
+            }
+            catch(const std::runtime_error& e)
+            {
+                ROS_FATAL("Failed to load model file %s: %s. Existing", modelName.c_str(),e.what());
+                ros::shutdown();
+                return;
+            }
+
+            if(!result)
+            {
+                ROS_ERROR_ONCE("Failed to load model file %s: %s. Will retry",modelName.c_str(),inferencer->getErrorString().c_str());
+                return;
+            }
+
+            ROS_INFO("Successfully load model file %s", modelName.c_str());
+            status = Status::ALLOC_OUTPUT;   
+        }
+        else if(status == Status::ALLOC_OUTPUT)
+        {
+            std::string outputName = nh.param<std::string>("output_name", "outputs");
+
+            try
+            {
+                outputBufferSize = inferencer->getOutputBuffer(outputName, &outputBuffer);
+            }
+            catch(const std::runtime_error& e)
+            {
+                ROS_FATAL("Failed to allocate ouput tensor: %s. Exiting", e.what());
+                ros::shutdown();
+                return;
+            }
+
+            if(outputBufferSize == 0)
+            {
+                ROS_ERROR_ONCE("Failed to allocate output tensor: %s. Will retry", inferencer->getErrorString().c_str());
+                return;
+            }
+
+            if(outputBufferSize != sizeof(float))
+            {
+                ROS_FATAL("Invaild byte size of output tensor. Need 4 but get %ld. Exiting ", outputBufferSize);
+                ros::shutdown();
+                return;
+            }
+
+            ROS_INFO("Successfully allocate output tensor %s", outputName.c_str());
+            status = Status::ALLOC_INPUT;
+
+        }
+        else if(status == Status::ALLOC_INPUT)
+        {
+            std::string inputName = nh.param<std::string>("input_name", "input");
+            
+            try
+            {
+                inputBufferSize = inferencer->getInputBuffer(inputName, &inputBuffer);
+            }
+            catch(const std::runtime_error& e)
+            {
+                ROS_FATAL("Failed to allocate input tensor %s: %s. Exi ting", inputName.c_str(), e.what());
+                ros::shutdown();
+                return;
+            }
+
+            if(inputBufferSize == 0)
+            {
+                ROS_ERROR_ONCE("Failed to allocate input tensor %s: %s. Will retry",inputName.c_str(),inferencer->getErrorString().c_str());
+                return;
+            }
+
+            ROS_INFO("Successfully allocate input tensor %s", inputName.c_str());
+
+            imageSub = nh.subscribe<sensor_msgs::Image>("image_raw", 10, 
+                    boost::bind(&NNController::imageCallback1, this, boost::placeholders::_1));
+
+            status = Status::WAIT_IMAGE;
+        }
+    }
+
+    void imageCallback1(const sensor_msgs::ImageConstPtr& msg) 
+    {
+        int imageWidth = msg->width;
+        int imageHeight = msg->height;
+
+        int x = nh.param<int>("roi/x", 0);
+        int y = nh.param<int>("roi/y", 0);
+        int roiWidth = nh.param<int>("roi/width", msg->width);
+        int roiHeight = nh.param<int>("roi/height", msg->height);
+
+        cv::Rect vaildRegion(0,0,msg->width,msg->height);
+        roi = cv::Rect(x,y,roiWidth,roiHeight) & vaildRegion;
+
+        size_t roiByteSize;
+
+        grayScale = nh.param<bool>("to_grayscale", false);
+
+        if(grayScale)
+        {
+            roiByteSize = roi.area() * 4;
+        }
+        else
+        {
+            roiByteSize = roi.area() * 3 * 4;
+        }
+
+        if(roiByteSize != inputBufferSize)
+        {
+            ROS_ERROR_ONCE("Image roi byte size %ld does not match the input buffer size %ld. Will retry", roiByteSize, inputBufferSize);
             return;
         }
 
+        ROS_INFO("Vaild roi region is x: %d, y: %d, width: %d, height: %d", roi.x, roi.y, roi.width, roi.height);
+
+        imageMat = cv::Mat(roi.height, roi.width, CV_32FC1, inputBuffer);
+
+        status = Status::RUNNING;
+
+        imageSub = nh.subscribe<sensor_msgs::Image>("image_raw", 10, 
+                    boost::bind(&NNController::imageCallback2, this, boost::placeholders::_1));
+
+    }
+
+    void imageCallback2(const sensor_msgs::ImageConstPtr& msg)
+    {
         cv_bridge::CvImageConstPtr imagePtr = cv_bridge::toCvShare(msg, msg->encoding);
 
         if(grayScale)
         {
             cv::Mat grayImage;
-            cv::cvtColor(imagePtr->image, grayImage, cv::COLOR_RGB2GRAY);
+            cv::cvtColor(imagePtr->image(roi), grayImage, cv::COLOR_RGB2GRAY);
             grayImage.convertTo(imageMat, CV_32FC1);
         }
         else
@@ -137,62 +248,29 @@ class NNController: controller::Controller
         }
         
 
-        if(!infer->infer())
-            throw std::runtime_error("Failed to run inference");
+        if(!inferencer->infer())
+        {
+            ROS_ERROR("Failed to run inference %s", inferencer->getErrorString().c_str());
+            imageSub.shutdown();
+            status = Status::INIT_BACKEND;
+            return;
+        }
 
-        this->control(0, *static_cast<float*>(steerAngle));
+        this->control(0, *reinterpret_cast<float*>(outputBuffer));
+
+        ROS_INFO("Run inference successfully %f", *reinterpret_cast<float*>(outputBuffer));
     }
-
-};
-
-enum class NNControllerStatus
-{
-    INITING,
-    RUNNING,
 };
 
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "nn_controller_node");
     
-    ros::NodeHandle nh;
+    ros::NodeHandle nh("~");
 
-    NNControllerStatus status = NNControllerStatus::INITING;
+    NNController controller(nh);
 
-    std::unique_ptr<NNController> controllerPtr;
-
-    while(ros::ok())
-    {
-        if(status == NNControllerStatus::INITING)
-        {
-            try
-            {
-                controllerPtr.reset();
-                controllerPtr = std::make_unique<NNController>(nh);
-            }
-            catch(const std::runtime_error& e)
-            {
-                ROS_ERROR_ONCE("%s, will retry", e.what());
-                boost::this_thread::sleep_for(boost::chrono::milliseconds(1000));
-                continue;
-            }
-            status = NNControllerStatus::RUNNING;
-        }
-        else if(status == NNControllerStatus::RUNNING)
-        {
-            try
-            {
-                ros::spin();
-            }
-            catch(const std::runtime_error& e)
-            {
-                ROS_ERROR_ONCE("%s, will retry", e.what());
-                status = NNControllerStatus::INITING;
-                continue;
-            }
-            break;
-        }
-    }
+    ros::spin();
 
     return 0;
 }
