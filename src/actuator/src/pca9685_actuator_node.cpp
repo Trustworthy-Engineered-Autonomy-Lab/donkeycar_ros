@@ -3,7 +3,6 @@
 
 #include <actuator/actuator.h>
 
-#include <stdexcept>
 #include <string>
 
 #include <boost/thread.hpp>
@@ -28,74 +27,93 @@ class PCA9685
         Close();
     }
 
-    void Open(std::string& deviceName, unsigned freqency = 60, unsigned address = 0x40)
+    bool Open(std::string& deviceName, unsigned freqency = 60, unsigned address = 0x40)
     {
         fileHandle = open(deviceName.c_str(), O_RDWR);
 
         if (fileHandle < 0) 
         {
-            throw std::runtime_error("Failed to open the I2C bus: " + deviceName);
+            errorString = "Failed to open the I2C bus: " + deviceName;
+            return false;
         }
 
         if (ioctl(fileHandle, I2C_SLAVE, address) < 0) 
         {
-            throw std::runtime_error("Failed to acquire bus access to PCA9685");
+            errorString = "Failed to acquire bus access to " + deviceName;
+            return false;
         }
 
         float prescaleVal = 25000000.0f / (4096 * freqency) - 1;
         uint8_t prescale = static_cast<uint8_t>(std::round(prescaleVal));
 
-        uint8_t Mode = readRegister(MODE1);
+        uint8_t Mode = 0;
+        if(!readRegister(MODE1, &Mode))
+            return false;
+        
         if(!(Mode & 0x10))
         {
             uint8_t newMode = (Mode & 0x7F) | 0x10; // Sleep mode
-            writeRegister(MODE1, newMode);
+            if(!writeRegister(MODE1, newMode))
+                return false;
         }
 
-        writeRegister(PRESCALE, prescale);
-        writeRegister(MODE1, Mode & 0xEF);
+        if(!writeRegister(PRESCALE, prescale))
+            return false;
+        if(!writeRegister(MODE1, Mode & 0xEF))
+            return false;
         usleep(5000); // Wait for oscillator to stabilize
 
-        Mode = readRegister(MODE1);
-        writeRegister(MODE1, Mode | 0x80);
-        Mode = readRegister(MODE1);
+        if(!readRegister(MODE1, &Mode))
+            return false;
+        if(!writeRegister(MODE1, Mode | 0x80))
+            return false;
+        if(!readRegister(MODE1, &Mode))
+            return false;
         if (Mode & 0x80)
-            throw std::runtime_error("Failed to restart PCA9685");
+        {
+            errorString = "Failed to restart PCA9685";
+            return false;
+        }
+
+        return true;
     }
 
     void Close()
     {
-        try
-        {
-            uint8_t Mode = readRegister(MODE1);
-            writeRegister(MODE1, Mode | 0x10);
-        }
-        catch(...)
-        {
-        }
-        
+        uint8_t Mode = 0;
+        readRegister(MODE1, &Mode);
+        writeRegister(MODE1, Mode | 0x10);
+
         close(fileHandle);
     }
 
-    void setPWMChannel(int channel, float dutyCycle) 
+    bool setPWMChannel(int channel, float dutyCycle) 
     {
         uint16_t on = 0;
         uint16_t off = 4096 * dutyCycle;
-        writeRegister(LED0_ON_L + 4 * channel, on & 0xFF);
-        writeRegister(LED0_ON_H + 4 * channel, on >> 8);
-        writeRegister(LED0_OFF_L + 4 * channel, off & 0xFF);
-        writeRegister(LED0_OFF_H + 4 * channel, off >> 8);
+
+        if(!writeRegister(LED0_ON_L + 4 * channel, on & 0xFF))
+            return false;
+        if(!writeRegister(LED0_ON_H + 4 * channel, on >> 8))
+            return false;
+        if(!writeRegister(LED0_OFF_L + 4 * channel, off & 0xFF))
+            return false;
+        if(!writeRegister(LED0_OFF_H + 4 * channel, off >> 8))
+            return false;
+        
+        return true;
     }
 
-    void reset() 
+    const std::string& getErrorString()
     {
-        writeRegister(MODE1, 0x00);
+        return errorString;
     }
     
 
     private:
 
     int fileHandle;
+    std::string errorString;
 
     static constexpr uint8_t MODE1 = 0x00;
     static constexpr uint8_t MODE2 = 0x01;
@@ -105,53 +123,42 @@ class PCA9685
     static constexpr uint8_t LED0_OFF_H = 0x09;
     static constexpr uint8_t PRESCALE = 0xFE;
 
-    void writeRegister(uint8_t reg, uint8_t value) 
+    bool writeRegister(uint8_t reg, uint8_t value) 
     {
         uint8_t buffer[2] = {reg, value};
 
         if (write(fileHandle, buffer, 2) != 2) 
         {
-            throw std::runtime_error("Failed to write to PCA9685");
+            errorString = "Failed to write register " + std::to_string(reg);
+            return false;
         }
-
+        return true;
     }
 
-    uint8_t readRegister(uint8_t reg) 
+    bool readRegister(uint8_t reg, uint8_t* value) 
     {
         if (write(fileHandle, &reg, 1) != 1) 
         {
-            throw std::runtime_error("Failed to read from PCA9685");
+            errorString = "Failed to read register " + std::to_string(reg);
+            return false;
         }
-        uint8_t value;
 
-        if (read(fileHandle, &value, 1) != 1) 
+        if (read(fileHandle, value, 1) != 1) 
         {
-            throw std::runtime_error("Failed to read from PCA9685");
+            errorString = "Failed to read register " + std::to_string(reg);
+            return false;
         }
-        return value;
+        return true;
     }
 };
 
 class PCA9685Actuator: public actuator::Actuator
 {
     public:
-    PCA9685Actuator(ros::NodeHandle& nodeHandle):actuator::Actuator(nodeHandle)
+    PCA9685Actuator(ros::NodeHandle& nodeHandle):actuator::Actuator(nodeHandle),
+        nh(nodeHandle),
+        status(Status::INITING)
     {
-        
-        int busNumber = nodeHandle.param<int>("bus_number", 1);
-    
-        std::string busName = "/dev/i2c-" + std::to_string(busNumber);
-
-        pwmFreq = nodeHandle.param<int>("pwm_frequency", 60);
-
-        if (pwmFreq < 25 || pwmFreq > 1500)
-        {
-            ROS_WARN("Invalid PCA9685 pwm frequency %dHz! Using default values 60 Hz", pwmFreq);
-            pwmFreq = 60;
-        }
-
-
-        pca9685.Open(busName, pwmFreq);
 
         throttleChannel = nodeHandle.param<int>("throttle_pwm_channel",0);
         steerChannel = nodeHandle.param<int>("steer_pwm_channel",1);
@@ -203,43 +210,67 @@ class PCA9685Actuator: public actuator::Actuator
         ROS_INFO("%-20s | %-10d | %-10d", "Mid pulse width (us)", throttleMidPW, steerMidPW);
         ROS_INFO("%-20s | %-10d | %-10d", "Max pulse width (us)", throttleMaxPW, steerMaxPW);
         ROS_INFO("-----------------------------------------------");
+
+        timer = nodeHandle.createTimer(ros::Duration(1), boost::bind(&PCA9685Actuator::timerCallback, this, boost::placeholders::_1));
     }
 
     void actuate(float throttle, float steer)
     {
-
-        float steerPW;
-        if(steer > 0)
+        if(status == Status::RUNNING)
         {
-            steerPW = steer * (steerMaxPW - steerMidPW) + steerMidPW;
+            float steerPW;
+            if(steer > 0)
+            {
+                steerPW = steer * (steerMaxPW - steerMidPW) + steerMidPW;
+            }
+            else
+            {
+                steerPW = steer * (steerMidPW - steerMinPW) + steerMidPW;
+            }
+
+            float throttlePW;
+            if(throttle > 0)
+            {
+                throttlePW = throttle * (throttleMaxPW - throttleMidPW) + steerMidPW;
+            }
+            else
+            {
+                throttlePW = throttle * (throttleMidPW - throttleMinPW) + throttleMidPW;
+            }
+
+            ROS_DEBUG("Throttle pwm pulse width: %f us, Steer pwm pulse width: %f us", throttlePW, steerPW);
+
+            float duration = 1000000/(float)pwmFreq;
+
+            float throttleDuty = throttlePW/duration;
+            float steerDuty = steerPW/duration;
+
+            if(!pca9685.setPWMChannel(throttleChannel, throttleDuty))
+            {
+                ROS_ERROR("Failed to set throttle value: %s. Will retry", pca9685.getErrorString().c_str());
+                pca9685.Close();
+                status = Status::INITING;
+                return;
+            }
+            
+            if(!pca9685.setPWMChannel(steerChannel, steerDuty))
+            {
+                ROS_ERROR("Failed to set steer angle: %s. Will retry", pca9685.getErrorString().c_str());
+                pca9685.Close();
+                status = Status::INITING;
+                return;
+            }
         }
-        else
-        {
-            steerPW = steer * (steerMidPW - steerMinPW) + steerMidPW;
-        }
-
-        float throttlePW;
-        if(throttle > 0)
-        {
-            throttlePW = throttle * (throttleMaxPW - throttleMidPW) + steerMidPW;
-        }
-        else
-        {
-            throttlePW = throttle * (throttleMidPW - throttleMinPW) + throttleMidPW;
-        }
-
-        ROS_DEBUG("Throttle pwm pulse width: %f us, Steer pwm pulse width: %f us", throttlePW, steerPW);
-
-        float duration = 1000000/(float)pwmFreq;
-
-        float throttleDuty = throttlePW/duration;
-        float steerDuty = steerPW/duration;
-
-        pca9685.setPWMChannel(throttleChannel, throttleDuty);
-        pca9685.setPWMChannel(steerChannel, steerDuty);
     }
 
     private:
+
+    enum class Status
+    {
+        INITING,
+        RUNNING,
+    };
+
     PCA9685 pca9685;
     int pwmFreq;
 
@@ -253,12 +284,42 @@ class PCA9685Actuator: public actuator::Actuator
     int steerMinPW;
     int steerMaxPW;
     int steerMidPW;
-};
 
-enum class PCA9675ActuatorStatus
-{
-    INITING,
-    RUNNING,
+    ros::Timer timer;
+    Status status;
+
+    ros::NodeHandle& nh;
+
+    void timerCallback(const ros::TimerEvent& event)
+    {
+        if(status == Status::INITING)
+        {
+            int busNumber = nh.param<int>("bus_number", 1);
+    
+            std::string busName = "/dev/i2c-" + std::to_string(busNumber);
+
+            pwmFreq = nh.param<int>("pwm_frequency", 60);
+
+            if (pwmFreq < 25 || pwmFreq > 1500)
+            {
+                ROS_WARN_ONCE("Invalid PCA9685 pwm frequency %dHz! Using default values 60 Hz", pwmFreq);
+                pwmFreq = 60;
+            }
+
+            if(!pca9685.Open(busName, pwmFreq))
+            {
+                pca9685.Close();
+                ROS_ERROR_ONCE("Failed to initialize PCA9685: %s. Will retry", pca9685.getErrorString().c_str());
+                return;
+            }
+
+            status = Status::RUNNING;
+        }
+        else if(status == Status::RUNNING)
+        {
+
+        }
+    }
 };
 
 int main(int argc, char** argv)
@@ -270,43 +331,9 @@ int main(int argc, char** argv)
     ros::NodeHandle nh("~");
 
 
-    std::unique_ptr<PCA9685Actuator> pca9685ActuatorPtr;
-
-    PCA9675ActuatorStatus status = PCA9675ActuatorStatus::INITING;
+    PCA9685Actuator pca9685Actuator(nh);
     
-    while(ros::ok())
-    {
-        if(status == PCA9675ActuatorStatus::INITING)
-        {
-            try
-            {
-                pca9685ActuatorPtr = std::make_unique<PCA9685Actuator>(nh);
-            }
-            catch(const std::runtime_error& e)
-            {   
-                ROS_ERROR("%s, will retry", e.what());
-                pca9685ActuatorPtr.reset();
-                boost::this_thread::sleep_for(boost::chrono::seconds(1));
-                continue;
-            }
-            status = PCA9675ActuatorStatus::RUNNING;
-        }
-        else if(status == PCA9675ActuatorStatus::RUNNING)
-        {
-            try
-            {
-                ros::spin();
-            }
-            catch(const std::runtime_error& e)
-            {
-                ROS_ERROR("%s, will retry", e.what());
-                pca9685ActuatorPtr.reset();
-                status = PCA9675ActuatorStatus::INITING;
-                continue;
-            }
-            break;
-        }
-    }
+    ros::spin();
 
     return 0;
 }

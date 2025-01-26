@@ -23,7 +23,7 @@ class NNController: controller::Controller
         status(Status::INIT_BACKEND),
         Controller(nodeHandle)
     {
-        timer = nodeHandle.createTimer(ros::Duration(1), boost::bind(&NNController::run, this, boost::placeholders::_1));
+        timer = nodeHandle.createTimer(ros::Duration(1), boost::bind(&NNController::timerCallback, this, boost::placeholders::_1));
     }
 
     ~NNController()
@@ -59,7 +59,7 @@ class NNController: controller::Controller
     cv::Rect roi;
     bool grayScale;
 
-    void run(const ros::TimerEvent& event)
+    void timerCallback(const ros::TimerEvent& event)
     {
         if(status == Status::INIT_BACKEND)
         {
