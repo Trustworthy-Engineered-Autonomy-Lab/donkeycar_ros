@@ -37,7 +37,7 @@
         <remap from="camera/image_raw" to="$(arg cam_name)/image_raw" /> -->
     </node>
 
-    <!-- <node pkg="controller" type="nn_controller_node" name="nn_controller_node" output="screen">
+    <node pkg="controller" type="nn_controller_node" name="nn_controller_node" output="screen">
         <param name="steer_ratio" value="1"/>
         <param name="backend" value="tensorrt"/>
         
@@ -50,9 +50,9 @@
         <param name="input_name" value="input"/>
 
         <remap from="/nn_controller_node/image_raw" to="/camera/image_raw" />
-    </node> -->
+    </node>
 
-    <node pkg="controller" type="nn_controller_node" name="nn_controller_node" output="screen">
+    <!-- <node pkg="controller" type="nn_controller_node" name="nn_controller_node" output="screen">
         <param name="steer_ratio" value="1"/>
         <param name="backend" value="tensorflow"/>
         <param name="model_file" value="$(find donkeycar)/models/0206"/>
@@ -64,5 +64,5 @@
         <param name="input_name" value="img_in"/>
 
         <remap from="/nn_controller_node/image_raw" to="/camera/image_raw" />
-    </node>
+    </node> -->
 </launch>

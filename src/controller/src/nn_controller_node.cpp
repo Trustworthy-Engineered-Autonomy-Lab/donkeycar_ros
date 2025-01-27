@@ -93,25 +93,13 @@ class NNController: controller::Controller
         if(status == Status::INIT_BACKEND)
         {
             std::string backend = nh.param<std::string>(ros::this_node::getName() + "/backend", "tensorflow");
+            std::string dllName = "lib" + backend + "_inferencer.so";
 
-            if(backend == "tensorrt")
-            {
-                dllHandle = dlopen("librt_inferencer.so", RTLD_LAZY); 
-            }
-            else if(backend == "tensorflow")
-            {
-                dllHandle = dlopen("libtf_inferencer.so", RTLD_LAZY);
-            }
-            else
-            {
-                ROS_WARN_ONCE("Unsupported backend %s. Using default backend tensorflow", backend.c_str());
-                dllHandle = dlopen("libtf_inferencer.so", RTLD_LAZY);
-            }
+            dllHandle = dlopen(dllName.c_str(), RTLD_LAZY); 
 
             if(dllHandle == nullptr)
             {
-                ROS_FATAL("Can not open shared library: %s", dlerror());
-                ros::shutdown();
+                ROS_ERROR_ONCE("Unsupported backend %s: %s. Will retry", backend.c_str(), dlerror());
                 return;
             }
 
@@ -312,7 +300,7 @@ class NNController: controller::Controller
 
         this->control(0, *reinterpret_cast<float*>(outputBuffer));
 
-        ROS_INFO("Run inference successfully %f", *reinterpret_cast<float*>(outputBuffer));
+        ROS_DEBUG("Run inference successfully %f", *reinterpret_cast<float*>(outputBuffer));
     }
 };
 

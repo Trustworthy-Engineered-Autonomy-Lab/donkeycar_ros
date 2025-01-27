@@ -3,7 +3,7 @@
 extern "C" {
 #endif
 
-void* createInferencer(void* nodeHandle);
+void* createInferencer(void* options);
 void deleteInferencer(void* inferencer);
 
 bool loadModel(void* inferencer, const char* modelName);
