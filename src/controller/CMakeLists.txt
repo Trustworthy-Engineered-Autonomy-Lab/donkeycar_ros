@@ -157,6 +157,7 @@ target_link_libraries(joystick_${PROJECT_NAME}_node
 target_link_libraries(nn_${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBS}
+  dl
 )
 
 #############

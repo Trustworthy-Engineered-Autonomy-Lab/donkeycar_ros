@@ -1,11 +1,76 @@
 #include <inferencer/inferencer.h>
+#include <inferencer/inferencer_c.h>
 
 #include <cuda_runtime_api.h>
 
+#include <NvInfer.h>
+#include <NvOnnxParser.h>
+
+#include <boost/filesystem.hpp>
 
 
 namespace inferencer
 {
+    class RTInferencer: public Inferencer
+    {
+        public:
+        RTInferencer() = delete;
+        RTInferencer(const ros::NodeHandle& nodeHandle);
+        ~RTInferencer();
+
+        bool infer();
+        bool loadModel(const std::string& modelName);
+        size_t getInputBuffer(const std::string& inputName, void** bufferPtr);
+        size_t getOutputBuffer(const std::string& outputName, void** bufferPtr);
+
+        
+
+        private:
+
+        struct NvInferDeleter 
+        {
+            template <typename T>
+            void operator()(T* obj) const 
+            {
+                if (obj) 
+                {
+                    obj->destroy();
+                }
+            }
+        };
+
+        class Logger : public nvinfer1::ILogger           
+        {
+            void log(Severity severity, const char* msg) noexcept override
+            {
+                // suppress info-level messages
+                if (severity == Severity::kINFO)
+                    ROS_INFO("%s",msg);
+                else if (severity == Severity::kVERBOSE)
+                    ROS_DEBUG("%s",msg);
+                else if (severity == Severity::kWARNING)
+                    ROS_WARN("%s",msg);
+                else
+                    ROS_ERROR("%s",msg);
+            }
+        } logger;
+
+        std::unique_ptr<nvinfer1::ICudaEngine, NvInferDeleter> engine;
+        std::unique_ptr<nvinfer1::IExecutionContext, NvInferDeleter> context;
+
+        std::vector<void*> buffers;
+        cudaStream_t stream;
+        std::string errorString;
+
+        void* allocBuffer(int index, size_t size);
+        size_t getDataTypeSize(nvinfer1::DataType type);
+        size_t getVolume(const nvinfer1::Dims& dims) ;
+        std::unique_ptr<nvinfer1::ICudaEngine, NvInferDeleter> loadOnnx(const std::string& fileName);
+        std::unique_ptr<nvinfer1::ICudaEngine, NvInferDeleter> loadEngine(const std::string& fileName);
+        bool saveEngine(const std::string& fileName, const std::unique_ptr<nvinfer1::ICudaEngine, NvInferDeleter>& engine);
+    };
+
+
     RTInferencer::RTInferencer(const ros::NodeHandle& nodeHandle):Inferencer(nodeHandle),
     buffers(1, nullptr)
     {
@@ -306,4 +371,39 @@ namespace inferencer
         return true;
     }
 
+}
+
+extern "C" void* createInferencer(void* nodeHandle)
+{
+    return new inferencer::RTInferencer(*(ros::NodeHandle*)nodeHandle);
+}
+
+extern "C" void deleteInferencer(void* inferencer)
+{
+    delete (inferencer::RTInferencer*)inferencer;
+}
+
+extern "C" bool loadModel(void* inferencer, const char* modelName)
+{
+    return ((inferencer::RTInferencer*)inferencer)->loadModel(std::string(modelName));
+}
+
+extern "C" unsigned getInputBuffer(void* inferencer, const char* inputName, void** buffer)
+{
+    return ((inferencer::RTInferencer*)inferencer)->getInputBuffer(std::string(inputName),buffer);
+} 
+
+extern "C" unsigned getOutputBuffer(void* inferencer, const char* outputName, void** buffer)
+{
+    return ((inferencer::RTInferencer*)inferencer)->getOutputBuffer(std::string(outputName),buffer);
+} 
+
+extern "C" bool infer(void* inferencer)
+{
+    return ((inferencer::RTInferencer*)inferencer)->infer();
+}
+
+extern "C" const char* getErrorString(void* inferencer)
+{
+    return ((inferencer::RTInferencer*)inferencer)->getErrorString().c_str();
 }

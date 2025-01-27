@@ -150,7 +150,7 @@ set(TENSORFLOW_LIBRARIES
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
- INCLUDE_DIRS include ${TENSORFLOW_INCLUDE_DIR}
+#  INCLUDE_DIRS include ${TENSORFLOW_INCLUDE_DIR}
  LIBRARIES inferencer
 #  CATKIN_DEPENDS roscpp
 #  DEPENDS system_lib
@@ -172,8 +172,12 @@ include_directories(
 )
 
 ## Declare a C++ library
-add_library(${PROJECT_NAME}
+add_library(rt_inferencer
   src/rt_inferencer.cpp
+  
+)
+
+add_library(tf_inferencer
   src/tf_inferencer.cpp
 )
 
@@ -198,10 +202,14 @@ add_library(${PROJECT_NAME}
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(rt_inferencer
   ${catkin_LIBRARIES}
   ${CUDA_LIBRARIES}
   ${TENSORRT_LIBRARIES}
+)
+
+target_link_libraries(tf_inferencer
+  ${catkin_LIBRARIES}
   ${TENSORFLOW_LIBRARIES}
   ${PYTHON3_LIBRARIES}
 )

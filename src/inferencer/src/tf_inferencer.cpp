@@ -9,8 +9,13 @@
 #include <tensorflow/core/protobuf/meta_graph.pb.h>
 #include <tensorflow/core/framework/tensor_shape.h>
 #include <tensorflow/core/platform/logging.h>
+#include <tensorflow/core/framework/tensor.h>
+#include <tensorflow/core/public/session.h>
+#include <tensorflow/core/protobuf/meta_graph.pb.h>
+#include <tensorflow/cc/saved_model/loader.h>
 
 #include <boost/process/environment.hpp>
+#include <boost/filesystem.hpp>
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,6 +29,28 @@ extern const char* TF_Version(void);
 
 namespace inferencer
 {
+    class TFInferencer: public Inferencer
+    {
+        public:
+        TFInferencer() = delete;
+        TFInferencer(const ros::NodeHandle& nodeHandle);
+        ~TFInferencer();
+
+        bool infer();
+        bool loadModel(const std::string& modelName);
+        size_t getInputBuffer(const std::string& inputName, void** bufferPtr);
+        size_t getOutputBuffer(const std::string& outputName, void** bufferPtr);
+
+        private:
+        tensorflow::SavedModelBundle modelBundle;
+        tensorflow::SignatureDef signature;
+        std::vector<std::pair<std::string,tensorflow::Tensor>> inputTensorPairs;
+        std::vector<std::string> outputTensorNames;
+        std::vector<tensorflow::Tensor> outputTensors;
+
+        void** outputBuffer;
+    };
+
     TFInferencer::TFInferencer(const ros::NodeHandle& nodeHandle):Inferencer(nodeHandle)
     {
         // boost::process::environment env = boost::this_process::environment();
@@ -201,4 +228,39 @@ namespace inferencer
         return true;
     }
 
+}
+
+extern "C" void* createInferencer(void* nodeHandle)
+{
+    return new inferencer::TFInferencer(*(ros::NodeHandle*)nodeHandle);
+}
+
+extern "C" void deleteInferencer(void* inferencer)
+{
+    delete (inferencer::TFInferencer*)inferencer;
+}
+
+extern "C" bool loadModel(void* inferencer, const char* modelName)
+{
+    return ((inferencer::TFInferencer*)inferencer)->loadModel(modelName);
+}
+
+extern "C" unsigned getInputBuffer(void* inferencer, const char* inputName, void** buffer)
+{
+    return ((inferencer::TFInferencer*)inferencer)->getInputBuffer(inputName,buffer);
+} 
+
+extern "C" unsigned getOutputBuffer(void* inferencer, const char* outputName, void** buffer)
+{
+    return ((inferencer::TFInferencer*)inferencer)->getOutputBuffer(outputName,buffer);
+} 
+
+extern "C" bool infer(void* inferencer)
+{
+    return ((inferencer::TFInferencer*)inferencer)->infer();
+}
+
+extern "C" const char* getErrorString(void* inferencer)
+{
+    return ((inferencer::TFInferencer*)inferencer)->getErrorString().c_str();
 }
