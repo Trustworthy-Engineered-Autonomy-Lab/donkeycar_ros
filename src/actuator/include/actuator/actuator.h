@@ -5,26 +5,30 @@
 #include <numeric>
 #include <unordered_map>
 
+#include <actuator/ActuatorConfig.h>
+#include <dynamic_reconfigure/server.h>
+
 namespace actuator{
     class Actuator 
     {
         public:
-        Actuator() = delete;
-        Actuator(ros::NodeHandle& nodeHandle)
+        Actuator():server(ros::NodeHandle("~actuator"))
         {
-            std::string nodeName = ros::this_node::getName();
-
+            ros::NodeHandle nodeHandle("~");
+            
             int controlFreq = nodeHandle.param<int>("control_frequency",50);
             if(controlFreq < 0)
             {
                 ROS_WARN("Invaild control frequency %d, Using default value 50", controlFreq);
             }
             
-            timer = nodeHandle.createTimer(ros::Duration(1/controlFreq), boost::bind(&Actuator::timerCallback, this, boost::placeholders::_1));
+            timer = nodeHandle.createTimer(ros::Duration(1.0/controlFreq), boost::bind(&Actuator::timerCallback, this, boost::placeholders::_1));
 
             cmdSub = nodeHandle.subscribe<controller::motion_cmd>("/motion_cmd",10, 
                 boost::bind(&Actuator::motionCallback, this, boost::placeholders::_1));
             combinedCmdPub = nodeHandle.advertise<controller::motion_cmd>("/combined_motion_cmd",10);
+
+            server.setCallback(boost::bind(&Actuator::serverCallback,this,boost::placeholders::_1,boost::placeholders::_2));
         }
 
         virtual void actuate(float throttle, float steer)
@@ -38,6 +42,7 @@ namespace actuator{
         ros::Timer timer;
 
         std::unordered_map<std::string, std::array<float, 2>> motionCmds;
+        dynamic_reconfigure::Server<actuator::ActuatorConfig> server;
         
         void timerCallback(const ros::TimerEvent& event)
         {
@@ -78,6 +83,16 @@ namespace actuator{
             
             motionCmds[msg->header.frame_id][0] = msg->throttle;
             motionCmds[msg->header.frame_id][1] = msg->steer;
+        }
+
+        void serverCallback(actuator::ActuatorConfig &config, uint32_t level)
+        {
+            if (level & 0x1) 
+            {
+                ROS_DEBUG("Parameter 'control_frequency' changed: %dHz", config.control_frequency);
+                timer.setPeriod(ros::Duration(1.0/config.control_frequency));
+            }
+
         }
     };
 }

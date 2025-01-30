@@ -9,16 +9,20 @@ project(controller)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   roscpp
+  rospy
   std_msgs
   message_generation
+  dynamic_reconfigure
   cv_bridge
-  inferencer
   roslib
+  rqt_gui
+  rqt_gui_cpp
 )
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenCV REQUIRED)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -90,10 +94,10 @@ generate_messages(
 ##     and list every .cfg file to be processed
 
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
-# generate_dynamic_reconfigure_options(
-#   cfg/DynReconf1.cfg
-#   cfg/DynReconf2.cfg
-# )
+generate_dynamic_reconfigure_options(
+  cfg/controller_reconfigure.cfg
+  cfg/joystick_controller_reconfigure.cfg
+)
 
 ###################################
 ## catkin specific configuration ##
@@ -115,23 +119,27 @@ catkin_package(
 ## Build ##
 ###########
 
+qt5_wrap_cpp(MOC_FILES include/controller/rqt_controller.h)
+
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${dynamic_reconfigure_PACKAGE_PATH}/cmake
 )
 
 ## Declare a C++ library
-# add_library(${PROJECT_NAME}
-#   src/${PROJECT_NAME}/controller.cpp
-# )
+add_library(rqt_${PROJECT_NAME}
+  src/${PROJECT_NAME}/rqt_controller.cpp
+  ${MOC_FILES} 
+)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
-# add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(rqt_${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
@@ -147,7 +155,8 @@ add_executable(nn_${PROJECT_NAME}_node src/nn_controller_node.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(joystick_${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
+add_dependencies(nn_${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(joystick_${PROJECT_NAME}_node
@@ -158,6 +167,13 @@ target_link_libraries(nn_${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBS}
   dl
+)
+
+target_link_libraries(rqt_${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+  Qt5::Widgets
+  Qt5::Core
+  Qt5::Gui
 )
 
 #############

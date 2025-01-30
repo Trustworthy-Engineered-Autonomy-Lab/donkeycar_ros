@@ -2,16 +2,23 @@
 #include <sensor_msgs/Joy.h>
 #include <controller/controller.h>
 
+#include <controller/JoystickControllerConfig.h>
+#include <dynamic_reconfigure/server.h>
+
+#include <string>
+#include <stdexcept>
+
 class JoystickController: controller::Controller
 {
     public:
-    JoystickController(ros::NodeHandle& nodeHandle):controller::Controller(nodeHandle)
+    JoystickController(ros::NodeHandle& nodeHandle):server(nodeHandle)
     {
-        throttle_axis = nodeHandle.param<int>(ros::this_node::getName()+"/throttle_axis", 4);
-        steer_axis = nodeHandle.param<int>(ros::this_node::getName()+"/steer_axis", 0);
+        throttle_axis = nodeHandle.param<int>("throttle_axis", 4);
+        steer_axis = nodeHandle.param<int>("steer_axis", 0);
         ROS_INFO("Joystick axis %d is mapped to throttle, axis %d is mapped to steer", throttle_axis, steer_axis);
 
         joystickSub = nodeHandle.subscribe<sensor_msgs::Joy>("/joy", 10, boost::bind(&JoystickController::callback,this,boost::placeholders::_1));
+        server.setCallback(boost::bind(&JoystickController::serverCallback,this,boost::placeholders::_1,boost::placeholders::_2));
     }
 
     private:
@@ -20,16 +27,18 @@ class JoystickController: controller::Controller
     int steer_axis;
     ros::Subscriber joystickSub;
 
+    dynamic_reconfigure::Server<controller::JoystickControllerConfig> server;
+
     void callback(const sensor_msgs::Joy::ConstPtr& msg)
     {   
-        float throttle = 4;
+        float throttle = 0;
         try
         {
             throttle = msg->axes.at(throttle_axis);
         }
         catch(const std::out_of_range& e)
         {
-            ROS_WARN_ONCE("Invaild joystick axis number %d for throttle. Using default value 4", throttle_axis);
+            ROS_WARN_ONCE("Invaild joystick axis number %d for throttle.", throttle_axis);
         }
 
         float steer = 0;
@@ -39,10 +48,41 @@ class JoystickController: controller::Controller
         }
         catch(const std::out_of_range& e)
         {
-            ROS_WARN_ONCE("Invaild joystick axis number %d for steer. Using defaule value 0", throttle_axis);
+            ROS_WARN_ONCE("Invaild joystick axis number %d for steer.", steer_axis);
         }
 
         control(throttle, steer);
+    }
+
+    void serverCallback(controller::JoystickControllerConfig &config, uint32_t level)
+    {
+        if (level & 0x1) 
+        {
+            try
+            {
+                throttle_axis = std::stoi(config.throttle_axis);
+            }
+            catch(const std::exception& e)
+            {
+                ROS_WARN("Invaild joystick axis parameter %s for throttle", config.throttle_axis.c_str());
+                return;
+            }
+            ROS_DEBUG("Parameter 'throttle_axis' changed: %s", config.throttle_axis.c_str());
+        }
+        if (level & 0x2)
+        {
+            try
+            {
+                steer_axis = std::stoi(config.steer_axis);
+            }
+            catch(const std::exception& e)
+            {
+                ROS_WARN("Invaild joystick axis parameter %s for steer", config.steer_axis.c_str());
+                return;
+            }
+            ROS_DEBUG("Parameter 'steer_axis' changed: %s", config.steer_axis.c_str());
+        }
+
     }
 
 };
@@ -53,7 +93,7 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "joystick_controller_node");
 
     // Create a NodeHandle
-    ros::NodeHandle nh;
+    ros::NodeHandle nh("~");
 
 
     // Create the controller

@@ -22,7 +22,6 @@ class NNController: controller::Controller
     public:
     NNController(ros::NodeHandle& nodeHandle):nh(nodeHandle),
         status(Status::INIT_BACKEND),
-        Controller(nodeHandle),
         inferencer(nullptr),
         dllHandle(nullptr)
     {

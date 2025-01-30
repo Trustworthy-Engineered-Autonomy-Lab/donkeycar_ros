@@ -1,7 +1,9 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
+#include <dynamic_reconfigure/server.h>
 
 #include <actuator/actuator.h>
+#include <actuator/PCA9685ActuatorConfig.h>
 
 #include <string>
 
@@ -43,6 +45,20 @@ class PCA9685
             return false;
         }
 
+        return setPWMFreq(freqency);
+    }
+
+    void Close()
+    {
+        uint8_t Mode = 0;
+        readRegister(MODE1, &Mode);
+        writeRegister(MODE1, Mode | 0x10);
+
+        close(fileHandle);
+    }
+
+    bool setPWMFreq(int freqency)
+    {
         float prescaleVal = 25000000.0f / (4096 * freqency) - 1;
         uint8_t prescale = static_cast<uint8_t>(std::round(prescaleVal));
 
@@ -74,17 +90,6 @@ class PCA9685
             errorString = "Failed to restart PCA9685";
             return false;
         }
-
-        return true;
-    }
-
-    void Close()
-    {
-        uint8_t Mode = 0;
-        readRegister(MODE1, &Mode);
-        writeRegister(MODE1, Mode | 0x10);
-
-        close(fileHandle);
     }
 
     bool setPWMChannel(int channel, float dutyCycle) 
@@ -155,62 +160,24 @@ class PCA9685
 class PCA9685Actuator: public actuator::Actuator
 {
     public:
-    PCA9685Actuator(ros::NodeHandle& nodeHandle):actuator::Actuator(nodeHandle),
+    PCA9685Actuator(ros::NodeHandle& nodeHandle):server(nodeHandle),
         nh(nodeHandle),
-        status(Status::INITING)
+        status(Status::WAITING),
+        pca9685{std::make_unique<PCA9685>()}
     {
 
-        throttleChannel = nodeHandle.param<int>("throttle_pwm_channel",0);
-        steerChannel = nodeHandle.param<int>("steer_pwm_channel",1);
+        throttleChannel = 0;
+        steerChannel = 1;
         
-        steerMinPW = nodeHandle.param<int>("steer_min_pulsewidth", 1000);
-        steerMaxPW = nodeHandle.param<int>("steer_max_pulsewidth", 2000);
-        steerMidPW = nodeHandle.param<int>("steer_mid_pulsewidth", 1500);
+        steerMinPW = 1000;
+        steerMaxPW = 2000;
+        steerMidPW = 1500;
 
-        throttleMinPW = nodeHandle.param<int>("throttle_min_pulsewidth", 1000);
-        throttleMaxPW = nodeHandle.param<int>("throttle_max_pulsewidth", 2000);
-        throttleMidPW = nodeHandle.param<int>("throttle_mid_pulsewidth", 1500);
+        throttleMinPW = 1000;
+        throttleMaxPW = 2000;
+        throttleMidPW = 1500;
 
-        if (throttleChannel < 0 || throttleChannel > 15)
-        {
-            ROS_WARN("Invalid PCA9685 channel number %d for throttle! Using default values 0", throttleChannel);
-            throttleChannel = 0;
-        }
-
-        if (steerChannel < 0 || steerChannel > 15)
-        {
-            ROS_WARN("Invalid PCA9685 channel number %d for steer! Using default values 1", steerChannel);
-            steerChannel = 1;
-        }
-
-        if(steerMinPW < 0 || steerMaxPW < steerMinPW || steerMidPW > steerMaxPW || steerMidPW < steerMinPW)
-        {
-            ROS_WARN("Invalid pulse width %dus %dus %dus for steer! Using default values 1000us 1500us 2000us", steerMinPW, steerMidPW, steerMaxPW);
-            steerMinPW = 1000;
-            steerMaxPW = 2000;
-            steerMidPW = 1500;
-        }
-
-        if(throttleMinPW < 0 || throttleMaxPW < throttleMinPW || throttleMidPW > throttleMaxPW || throttleMidPW < throttleMinPW)
-        {
-            ROS_WARN("Invalid pulse width %dus %dus %dus for throttle! Using default values 1000us 1500us 2000us", throttleMinPW, throttleMidPW, throttleMaxPW);
-            throttleMinPW = 1000;
-            throttleMaxPW = 2000;
-            throttleMidPW = 1500;
-        }
-        ROS_INFO("-----------------------------------------------");
-        ROS_INFO(" PCA9685 Configuration");
-        ROS_INFO("-----------------------------------------------");
-        ROS_INFO(" PWM freqency %dHz", pwmFreq);
-        ROS_INFO("-----------------------------------------------");
-        ROS_INFO("%-20s | %-10s | %-10s", "Parameter", "Throttle", "Steer");
-        ROS_INFO("---------------------+------------+------------");
-        ROS_INFO("%-20s | %-10d | %-10d", "PWM channel", throttleChannel, steerChannel);
-        ROS_INFO("%-20s | %-10d | %-10d", "Min pulse width (us)", throttleMinPW, steerMinPW);
-        ROS_INFO("%-20s | %-10d | %-10d", "Mid pulse width (us)", throttleMidPW, steerMidPW);
-        ROS_INFO("%-20s | %-10d | %-10d", "Max pulse width (us)", throttleMaxPW, steerMaxPW);
-        ROS_INFO("-----------------------------------------------");
-
+        server.setCallback(boost::bind(&PCA9685Actuator::serverCallback,this,boost::placeholders::_1,boost::placeholders::_2));
         timer = nodeHandle.createTimer(ros::Duration(1), boost::bind(&PCA9685Actuator::timerCallback, this, boost::placeholders::_1));
     }
 
@@ -245,18 +212,18 @@ class PCA9685Actuator: public actuator::Actuator
             float throttleDuty = throttlePW/duration;
             float steerDuty = steerPW/duration;
 
-            if(!pca9685.setPWMChannel(throttleChannel, throttleDuty))
+            if(!pca9685->setPWMChannel(throttleChannel, throttleDuty))
             {
-                ROS_ERROR("Failed to set throttle value: %s. Will retry", pca9685.getErrorString().c_str());
-                pca9685.Close();
+                ROS_ERROR("Failed to set throttle value: %s. Will retry", pca9685->getErrorString().c_str());
+                pca9685->Close();
                 status = Status::INITING;
                 return;
             }
             
-            if(!pca9685.setPWMChannel(steerChannel, steerDuty))
+            if(!pca9685->setPWMChannel(steerChannel, steerDuty))
             {
-                ROS_ERROR("Failed to set steer angle: %s. Will retry", pca9685.getErrorString().c_str());
-                pca9685.Close();
+                ROS_ERROR("Failed to set steer angle: %s. Will retry", pca9685->getErrorString().c_str());
+                pca9685->Close();
                 status = Status::INITING;
                 return;
             }
@@ -267,11 +234,13 @@ class PCA9685Actuator: public actuator::Actuator
 
     enum class Status
     {
+        WAITING,
         INITING,
         RUNNING,
     };
 
-    PCA9685 pca9685;
+    std::unique_ptr<PCA9685> pca9685;
+    std::string busDevice;
     int pwmFreq;
 
     int throttleChannel;
@@ -290,34 +259,168 @@ class PCA9685Actuator: public actuator::Actuator
 
     ros::NodeHandle& nh;
 
+    dynamic_reconfigure::Server<actuator::PCA9685ActuatorConfig> server;
+
+    inline bool checkPWMChannel(int channel){return channel >= 0 && channel <= 15;}
+    inline bool checkPWMPW(int minPW, int midPW, int maxPW){return minPW > 0 && midPW > minPW && maxPW > midPW;}
+    inline bool checkPWMFreq(int pwmFreq){return pwmFreq >= 25 && pwmFreq <= 1500;}
+
     void timerCallback(const ros::TimerEvent& event)
     {
-        if(status == Status::INITING)
+        if(status == Status::WAITING)
         {
-            int busNumber = nh.param<int>("bus_number", 1);
-    
-            std::string busName = "/dev/i2c-" + std::to_string(busNumber);
 
-            pwmFreq = nh.param<int>("pwm_frequency", 60);
-
-            if (pwmFreq < 25 || pwmFreq > 1500)
+        }
+        else if(status == Status::INITING)
+        {
+            if(!pca9685->Open(busDevice, pwmFreq))
             {
-                ROS_WARN_ONCE("Invalid PCA9685 pwm frequency %dHz! Using default values 60 Hz", pwmFreq);
-                pwmFreq = 60;
-            }
-
-            if(!pca9685.Open(busName, pwmFreq))
-            {
-                pca9685.Close();
-                ROS_ERROR_ONCE("Failed to initialize PCA9685: %s. Will retry", pca9685.getErrorString().c_str());
+                pca9685->Close();
+                ROS_ERROR_ONCE("Failed to initialize PCA9685: %s. Will retry", pca9685->getErrorString().c_str());
                 return;
             }
+
+            ROS_INFO("Succussfully initialized PCA9685 on %s", busDevice.c_str());
+
+            // ROS_INFO("-----------------------------------------------");
+            // ROS_INFO(" PCA9685 Configuration");
+            // ROS_INFO("-----------------------------------------------");
+            // ROS_INFO(" PWM freqency %dHz", pwmFreq);
+            // ROS_INFO("-----------------------------------------------");
+            // ROS_INFO("%-20s | %-10s | %-10s", "Parameter", "Throttle", "Steer");
+            // ROS_INFO("---------------------+------------+------------");
+            // ROS_INFO("%-20s | %-10d | %-10d", "PWM channel", throttleChannel, steerChannel);
+            // ROS_INFO("%-20s | %-10d | %-10d", "Min pulse width (us)", throttleMinPW, steerMinPW);
+            // ROS_INFO("%-20s | %-10d | %-10d", "Mid pulse width (us)", throttleMidPW, steerMidPW);
+            // ROS_INFO("%-20s | %-10d | %-10d", "Max pulse width (us)", throttleMaxPW, steerMaxPW);
+            // ROS_INFO("-----------------------------------------------");
 
             status = Status::RUNNING;
         }
         else if(status == Status::RUNNING)
         {
 
+        }
+    }
+
+    void serverCallback(actuator::PCA9685ActuatorConfig &config, uint32_t level)
+    {
+        if(level & 0x01)
+        {
+            if(checkPWMPW(config.steer_min_pulsewidth, config.steer_mid_pulsewidth, config.steer_max_pulsewidth))
+            {
+                steerMinPW = config.steer_min_pulsewidth;
+                steerMidPW = config.steer_mid_pulsewidth;
+                steerMaxPW = config.steer_max_pulsewidth;
+                ROS_INFO("PWM pulse width for steer is set to %dus %dus %dus", steerMinPW, steerMidPW, steerMaxPW);
+            }
+            else
+            {
+                ROS_WARN("Invalid pwm pulse width %dus %dus %dus for steer. Using %dus %dus %dus", 
+                    config.steer_min_pulsewidth, 
+                    config.steer_mid_pulsewidth, 
+                    config.steer_max_pulsewidth,
+                    steerMinPW, steerMidPW, steerMaxPW);
+            }
+        }
+        if(level & 0x02)
+        {
+            if(checkPWMPW(config.throttle_min_pulsewidth, config.throttle_mid_pulsewidth, config.throttle_max_pulsewidth))
+            {
+                throttleMinPW = config.throttle_min_pulsewidth;
+                throttleMidPW = config.throttle_mid_pulsewidth;
+                throttleMaxPW = config.throttle_max_pulsewidth;
+                ROS_INFO("PWM pulse width for throttle is set to %dus %dus %dus", throttleMinPW, throttleMidPW, throttleMaxPW);
+            }
+            else
+            {
+                ROS_WARN("Invalid pulse width %dus %dus %dus for throttle. Using %dus %dus %dus",
+                    config.throttle_min_pulsewidth,
+                    config.throttle_mid_pulsewidth,
+                    config.throttle_max_pulsewidth,
+                    throttleMinPW, throttleMidPW, throttleMaxPW);
+            }
+        }
+        if(level & 0x04)
+        {
+            if(!checkPWMChannel(config.steer_pwm_channel))
+            {
+                ROS_WARN("Invalid PCA9685 channel number %d for steer. Using %d", config.steer_pwm_channel, steerChannel);
+                return;
+            }
+            if(!checkPWMChannel(config.throttle_pwm_channel))
+            {
+                ROS_WARN("Invalid PCA9685 channel number %d for throttle. Using %d", config.throttle_pwm_channel, throttleChannel);
+                return;
+            }
+            if(config.steer_pwm_channel == config.throttle_pwm_channel)
+            {
+                ROS_WARN("Channel number for steer and throttle can not be equal");
+                return;
+            }
+            
+            if(steerChannel != config.steer_pwm_channel)
+            {
+                if(status == Status::RUNNING)
+                {
+                    pca9685->setPWMChannel(steerChannel,0);
+                }
+
+                steerChannel = config.steer_pwm_channel;
+            }
+
+            if(throttleChannel != config.throttle_pwm_channel)
+            {
+                if(status == Status::RUNNING)
+                {
+                    pca9685->setPWMChannel(throttleChannel,0);
+                }
+
+                throttleChannel = config.throttle_pwm_channel;
+            }
+            ROS_INFO("PCA9865 channel numbers is set to steer: %d throttle: %d", steerChannel, throttleChannel);
+        }
+        if(level & 0x08)
+        {
+            if(!checkPWMFreq(config.pwm_frequency))
+            {
+                ROS_WARN("Invaild PCA9685 pwm frequency %d. Using %d", config.pwm_frequency, pwmFreq);
+            }
+            else
+            {
+                pwmFreq = config.pwm_frequency;
+                if(status == Status::RUNNING)
+                {
+                    pca9685->setPWMFreq(pwmFreq);
+                }
+                
+                ROS_INFO("PCA9685 pwm frequency is set to %d", pwmFreq);
+            }
+        }
+        if(level & 0x10)
+        {
+            if(status == Status::WAITING)
+            {
+                busDevice = config.bus_device;
+                status = Status::INITING;
+            }
+            else if(status == Status::INITING)
+            {
+                busDevice = config.bus_device;
+            }
+            else if(status == Status::RUNNING)
+            {
+                std::unique_ptr<PCA9685> newPCA9685 = std::make_unique<PCA9685>();
+                if(!newPCA9685->Open(config.bus_device, pwmFreq))
+                {
+                    ROS_ERROR("Invaild i2c bus %s. Using %s", config.bus_device.c_str(),busDevice.c_str());
+                }
+                else
+                {
+                    pca9685.reset();
+                    pca9685 = std::move(newPCA9685);
+                }
+            }
         }
     }
 };
