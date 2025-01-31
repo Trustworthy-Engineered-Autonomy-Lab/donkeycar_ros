@@ -97,6 +97,7 @@ generate_messages(
 generate_dynamic_reconfigure_options(
   cfg/controller_reconfigure.cfg
   cfg/joystick_controller_reconfigure.cfg
+  cfg/param_controller_reconfigure.cfg
 )
 
 ###################################
@@ -146,6 +147,7 @@ add_dependencies(rqt_${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catki
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(joystick_${PROJECT_NAME}_node src/joystick_controller_node.cpp)
 add_executable(nn_${PROJECT_NAME}_node src/nn_controller_node.cpp)
+add_executable(param_${PROJECT_NAME}_node src/param_controller_node.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -157,6 +159,7 @@ add_executable(nn_${PROJECT_NAME}_node src/nn_controller_node.cpp)
 ## same as for the library above
 add_dependencies(joystick_${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
 add_dependencies(nn_${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
+add_dependencies(param_${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(joystick_${PROJECT_NAME}_node
@@ -167,6 +170,10 @@ target_link_libraries(nn_${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBS}
   dl
+)
+
+target_link_libraries(param_${PROJECT_NAME}_node
+  ${catkin_LIBRARIES}
 )
 
 target_link_libraries(rqt_${PROJECT_NAME}
