@@ -57,7 +57,6 @@ class NNController: controller::Controller
     ros::Timer timer;
 
     cv::Rect roi;
-    bool grayScale;
 
     void timerCallback(const ros::TimerEvent& event)
     {
@@ -192,16 +191,22 @@ class NNController: controller::Controller
 
         size_t roiByteSize;
 
-        grayScale = nh.param<bool>("to_grayscale", false);
-
-        if(grayScale)
+        int channels = 0;
+        if(msg->encoding == sensor_msgs::image_encodings::MONO8)
         {
-            roiByteSize = roi.area() * 4;
+            channels = 1;
+        }
+        else if(msg->encoding == sensor_msgs::image_encodings::RGB8)
+        {
+           channels = 3;
         }
         else
         {
-            roiByteSize = roi.area() * 3 * 4;
+            ROS_ERROR_ONCE("Unsupported image encoding %s. Will retry", msg->encoding.c_str());
+            return;
         }
+
+        roiByteSize = roi.area() * 4 * channels;
 
         if(roiByteSize != inputBufferSize)
         {
@@ -211,7 +216,8 @@ class NNController: controller::Controller
 
         ROS_INFO("Vaild roi region is x: %d, y: %d, width: %d, height: %d", roi.x, roi.y, roi.width, roi.height);
 
-        imageMat = cv::Mat(roi.height, roi.width, CV_32FC1, inputBuffer);
+
+        imageMat = cv::Mat(roi.height, roi.width, channels==1 ? CV_32FC1 : CV_32FC3, inputBuffer);
 
         status = Status::RUNNING;
 
@@ -224,16 +230,7 @@ class NNController: controller::Controller
     {
         cv_bridge::CvImageConstPtr imagePtr = cv_bridge::toCvShare(msg, msg->encoding);
 
-        if(grayScale)
-        {
-            cv::Mat grayImage;
-            cv::cvtColor(imagePtr->image(roi), grayImage, cv::COLOR_RGB2GRAY);
-            grayImage.convertTo(imageMat, CV_32FC1);
-        }
-        else
-        {
-            imagePtr->image.convertTo(imageMat, CV_32FC1);
-        }
+        imagePtr->image(roi).convertTo(imageMat, imagePtr->image.channels()==1 ? CV_32FC1 : CV_32FC3);
         
 
         if(!inferencer->infer())

@@ -33,6 +33,7 @@
     <env name="GSCAM_CONFIG" value="nvarguscamerasrc ! video/x-raw(memory:NVMM), width=3264, height=2464, format=NV12, framerate=10/1 ! nvvidconv flip-method=6 ! nvvidconv ! video/x-raw, width=224, height=224, format=BGRx ! videoconvert" />
 
     <node pkg="gscam" type="gscam" name="camera">
+        <param name="image_encoding" value="mono8"/>
         <!-- <param name="camera_info_url" value="package://localcam/calibrations/${NAME}.yaml" />
         <remap from="camera/image_raw" to="$(arg cam_name)/image_raw" /> -->
     </node>
@@ -46,7 +47,6 @@
         <param name="roi/y" value="80"/>
         <param name="roi/width" value="224"/>
         <param name="roi/height" value="144"/>
-        <param name="to_grayscale" value="true"/>
         <param name="input_name" value="input"/>
 
         <remap from="/nn_controller_node/image_raw" to="/camera/image_raw" />
