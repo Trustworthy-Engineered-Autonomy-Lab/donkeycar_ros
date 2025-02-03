@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   cv_bridge
   roslib
+  inferencer
   # rqt_gui
   # rqt_gui_cpp
 )

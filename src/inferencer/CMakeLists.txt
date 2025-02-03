@@ -150,7 +150,7 @@ set(TENSORFLOW_LIBRARIES
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include ${TENSORFLOW_INCLUDE_DIR}
+ INCLUDE_DIRS include
 #  LIBRARIES inferencer
 #  CATKIN_DEPENDS roscpp
 #  DEPENDS system_lib
