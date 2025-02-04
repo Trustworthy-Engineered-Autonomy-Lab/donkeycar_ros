@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <ros/package.h>
 #include <sensor_msgs/Image.h>
+#include <image_transport/image_transport.h>
 
 #include <fstream>
 #include <algorithm>
@@ -47,7 +48,8 @@ class NNController: controller::Controller
     std::unique_ptr<Inferencer> inferencer;
     cv::Mat imageMat;
 
-    ros::Subscriber imageSub;
+    image_transport::ImageTransport it(nh);
+    image_transport::Subscriber imageSub;
 
     void* outputBuffer;
     void* inputBuffer;
@@ -169,7 +171,7 @@ class NNController: controller::Controller
 
             ROS_INFO("Successfully allocate input tensor %s", inputName.c_str());
 
-            imageSub = nh.subscribe<sensor_msgs::Image>("image_raw", 10, 
+            imageSub = it.subscribe("image_raw", 10,
                     boost::bind(&NNController::imageCallback1, this, boost::placeholders::_1));
 
             status = Status::WAIT_IMAGE;
@@ -221,7 +223,7 @@ class NNController: controller::Controller
 
         status = Status::RUNNING;
 
-        imageSub = nh.subscribe<sensor_msgs::Image>("image_raw", 10, 
+        imageSub = it.subscribe("image_raw", 10,
                     boost::bind(&NNController::imageCallback2, this, boost::placeholders::_1));
 
     }
