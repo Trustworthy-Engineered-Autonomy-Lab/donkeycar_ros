@@ -20,7 +20,7 @@
 class NNController: controller::Controller
 {
     public:
-    NNController(ros::NodeHandle& nodeHandle):nh(nodeHandle),
+    NNController(ros::NodeHandle& nodeHandle):nh(nodeHandle),it(nodeHandle),
         status(Status::INIT_BACKEND),
         inferencer(nullptr)
     {
@@ -48,7 +48,7 @@ class NNController: controller::Controller
     std::unique_ptr<Inferencer> inferencer;
     cv::Mat imageMat;
 
-    image_transport::ImageTransport it(nh);
+    image_transport::ImageTransport it;
     image_transport::Subscriber imageSub;
 
     void* outputBuffer;

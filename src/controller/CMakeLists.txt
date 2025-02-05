@@ -16,6 +16,8 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   roslib
   inferencer
+  image_transport
+  
   # rqt_gui
   # rqt_gui_cpp
 )
