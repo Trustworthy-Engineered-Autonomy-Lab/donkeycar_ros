@@ -72,9 +72,9 @@ roslaunch donkeycar autopilot.launch
 ```
 Then AI model will control the steer, you can control the throttle by the joystick.
 ## Contribute
-### Write a inferencer plugin
+### Write an inferencer plugin
 check out [Inferencer plugins](./src/inferencer/README.md) for details.
-### Submit an issue.
+### Submit an issue
 
 <!-- LICENSE -->
 ## License

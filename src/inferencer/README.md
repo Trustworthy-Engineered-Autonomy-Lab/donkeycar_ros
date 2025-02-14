@@ -1,4 +1,8 @@
-### **Function Descriptions**
+## Introduction
+An inferencer plugin is dynamic library (.so file) that can be loaded during runtime by the inferencer. 
+Each inferencer plugin must implement and export five functions listed in the [Installation](#Function Descriptions).
+
+## Function Descriptions
 
 #### **1. `void* createInferencer(void* options)`**
 - **Purpose**: Creates an `Inferencer` instance.
