@@ -34,13 +34,11 @@
 
     <node pkg="gscam" type="gscam" name="camera">
         <param name="image_encoding" value="mono8"/>
-        <!-- <param name="camera_info_url" value="package://localcam/calibrations/${NAME}.yaml" />
-        <remap from="camera/image_raw" to="$(arg cam_name)/image_raw" /> -->
     </node>
 
     <node pkg="controller" type="nn_controller_node" name="nn_controller_node" output="screen">
         <param name="steer_ratio" value="1"/>
-        <param name="backend" value="tensorrt"/>
+        <param name="backend" value="torch"/>
         
         <param name="model_file" value="$(find donkeycar)/models/0206.onnx"/>
         <param name="roi/x" value="0"/>

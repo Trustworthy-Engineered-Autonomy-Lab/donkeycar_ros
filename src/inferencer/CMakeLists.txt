@@ -13,11 +13,13 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
-find_package(CUDA REQUIRED 10)
-
+find_package(CUDA REQUIRED 10 COMPONENTS cublas)
+find_library(CUDA_cublas_LIBRARY NAMES cublas PATHS /usr/lib/aarch64-linux-gnu)
+find_library(CUDA_cudart_LIBRARY NAMES cudart PATHS /usr/lib/aarch64-linux-gnu)
 find_library(NVINFER_LIBRARY nvinfer REQUIRED PATHS /usr/lib/aarch64-linux-gnu/)
 find_library(NVINFER_PLUGIN_LIBRARY nvinfer_plugin REQUIRED PATHS /usr/lib/aarch64-linux-gnu/)
 find_library(NVONNXPARSER_LIBRARY nvonnxparser REQUIRED PATHS /usr/lib/aarch64-linux-gnu/)
+find_package(Torch REQUIRED)
 
 set(TENSORRT_LIBRARIES
     ${NVINFER_LIBRARY}
@@ -169,12 +171,17 @@ include_directories(
   ${CUDA_INCLUDE_DIRS}
   ${TENSORFLOW_INCLUDE_DIR}
   ${PYTHON3_INCLUDE_DIR}
+  ${TORCH_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
 add_library(tensorflow_inferencer
   src/tensorflow_inferencer.cpp
   
+)
+
+add_library(torch_inferencer
+  src/pytorch_inferencer.cpp
 )
 
 add_library(tensorrt_inferencer
@@ -199,9 +206,13 @@ add_library(tensorrt_inferencer
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(${PROJEYCT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
+message(INFO ${CUDA_LIBRARIES})
+message("THIS IS A MESSSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE")
+message(INFO ${TORCH_LIBRARIES})
+
 target_link_libraries(tensorrt_inferencer
   ${catkin_LIBRARIES}
   ${CUDA_LIBRARIES}
