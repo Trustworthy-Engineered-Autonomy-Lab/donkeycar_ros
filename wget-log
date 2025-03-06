@@ -1,0 +1,6 @@
+--2025-02-27 20:24:06--  https://uflorida-my.sharepoint.com/download.aspx?SourceUrl=/personal/iruchkin_ufl_edu/Documents/TEA%20Lab%20OneDrive/Autoencoder%20cleaning/YangZhou/16000clean7dirty.pkl?csf=1
+Resolving uflorida-my.sharepoint.com (uflorida-my.sharepoint.com)... 13.107.136.10, 13.107.138.10, 2620:1ec:8fa::10, ...
+Connecting to uflorida-my.sharepoint.com (uflorida-my.sharepoint.com)|13.107.136.10|:443... connected.
+HTTP request sent, awaiting response... 403 Forbidden
+2025-02-27 20:24:06 ERROR 403: Forbidden.
+
