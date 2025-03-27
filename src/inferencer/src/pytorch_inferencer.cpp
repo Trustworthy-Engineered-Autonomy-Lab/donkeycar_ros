@@ -24,9 +24,6 @@ extern const char* PT_Version(void);
 class PTInferencer
 {
 private:
-    PTInferencer() : device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU){}
-
-    ~PTInferencer(){}
 
     torch::jit::script::Module model;
     std::vector<torch::Tensor> inputTensors;
@@ -39,6 +36,9 @@ public:
     PTInferencer()
             : device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
               inputBufferPtr(nullptr), outputBufferPtr(nullptr){}
+
+    ~PTInferencer(){}
+
     void* createInferencer(void* options){
         return new PTInferencer();
     }
