@@ -8,41 +8,47 @@ project(inferencer)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  roscpp
+        roscpp
 )
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
-find_package(CUDA REQUIRED 10)
+find_package(CUDA REQUIRED 10 COMPONENTS cublas)
+
+find_library(CUBLAS_LIBRARY NAMES cublas PATHS /usr/lib/aarch64-linux-gnu/)
+if(NOT CUBLAS_LIBRARY)
+    message(FATAL_ERROR "cublas library not found in /usr/lib/aarch64-linux-gnu")
+endif()
 
 find_library(NVINFER_LIBRARY nvinfer REQUIRED PATHS /usr/lib/aarch64-linux-gnu/)
 find_library(NVINFER_PLUGIN_LIBRARY nvinfer_plugin REQUIRED PATHS /usr/lib/aarch64-linux-gnu/)
 find_library(NVONNXPARSER_LIBRARY nvonnxparser REQUIRED PATHS /usr/lib/aarch64-linux-gnu/)
+find_package(Torch REQUIRED)
 
 set(TENSORRT_LIBRARIES
-    ${NVINFER_LIBRARY}
-    ${NVINFER_PLUGIN_LIBRARY}
-    ${NVONNXPARSER_LIBRARY}
+        ${NVINFER_LIBRARY}
+        ${NVINFER_PLUGIN_LIBRARY}
+        ${NVONNXPARSER_LIBRARY}
 )
 
 find_program(Python3_EXECUTABLE NAMES python3)
 
 execute_process(
-    COMMAND ${Python3_EXECUTABLE} -c "import tensorflow as tf; print(tf.sysconfig.get_include())"
-    OUTPUT_VARIABLE TENSORFLOW_INCLUDE_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND ${Python3_EXECUTABLE} -c "import tensorflow as tf; print(tf.sysconfig.get_include())"
+        OUTPUT_VARIABLE TENSORFLOW_INCLUDE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
 execute_process(
-    COMMAND ${Python3_EXECUTABLE} -c "import tensorflow as tf; print(tf.sysconfig.get_lib())"
-    OUTPUT_VARIABLE TENSORFLOW_LIBRARY_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND ${Python3_EXECUTABLE} -c "import tensorflow as tf; print(tf.sysconfig.get_lib())"
+        OUTPUT_VARIABLE TENSORFLOW_LIBRARY_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
 execute_process(
-    COMMAND ${Python3_EXECUTABLE} -c "from sysconfig import get_paths; print(get_paths()['include'])"
-    OUTPUT_VARIABLE PYTHON3_INCLUDE_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND ${Python3_EXECUTABLE} -c "from sysconfig import get_paths; print(get_paths()['include'])"
+        OUTPUT_VARIABLE PYTHON3_INCLUDE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
 # execute_process(
@@ -52,15 +58,15 @@ execute_process(
 # )
 
 execute_process(
-    COMMAND ${Python3_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('LDLIBRARY'))"
-    OUTPUT_VARIABLE PYTHON3_LIBRARIES
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND ${Python3_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('LDLIBRARY'))"
+        OUTPUT_VARIABLE PYTHON3_LIBRARIES
+        OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
 
 set(TENSORFLOW_LIBRARIES
-    ${TENSORFLOW_LIBRARY_DIR}/libtensorflow_framework.so.2
-    ${TENSORFLOW_LIBRARY_DIR}/python/_pywrap_tensorflow_internal.so
+        ${TENSORFLOW_LIBRARY_DIR}/libtensorflow_framework.so.2
+        ${TENSORFLOW_LIBRARY_DIR}/python/_pywrap_tensorflow_internal.so
 )
 
 
@@ -150,10 +156,10 @@ set(TENSORFLOW_LIBRARIES
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
- INCLUDE_DIRS include
-#  LIBRARIES inferencer
-#  CATKIN_DEPENDS roscpp
-#  DEPENDS system_lib
+        INCLUDE_DIRS include
+        #  LIBRARIES inferencer
+        #  CATKIN_DEPENDS roscpp
+        #  DEPENDS system_lib
 )
 
 ###########
@@ -164,21 +170,25 @@ catkin_package(
 ## Your package locations should be listed before other locations
 message(STATUS "TensorFlow include directory: ${TENSORFLOW_INCLUDE_DIR}")
 include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-  ${CUDA_INCLUDE_DIRS}
-  ${TENSORFLOW_INCLUDE_DIR}
-  ${PYTHON3_INCLUDE_DIR}
+        include
+        ${catkin_INCLUDE_DIRS}
+        ${CUDA_INCLUDE_DIRS}
+        ${TENSORFLOW_INCLUDE_DIR}
+        ${PYTHON3_INCLUDE_DIR}
+        ${TORCH_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
 add_library(tensorflow_inferencer
-  src/tensorflow_inferencer.cpp
-  
+        src/tensorflow_inferencer.cpp
+)
+
+add_library(torch_inferencer
+        src/pytorch_inferencer.cpp
 )
 
 add_library(tensorrt_inferencer
-  src/tensorrt_inferencer.cpp
+        src/tensorrt_inferencer.cpp
 )
 
 ## Add cmake target dependencies of the library
@@ -199,19 +209,42 @@ add_library(tensorrt_inferencer
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(${PROJEYCT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
+message(INFO ${CUDA_LIBRARIES})
+message("THIS IS A MESSSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE")
+message(INFO ${TORCH_LIBRARIES})
+
 target_link_libraries(tensorrt_inferencer
-  ${catkin_LIBRARIES}
-  ${CUDA_LIBRARIES}
-  ${TENSORRT_LIBRARIES}
+        ${catkin_LIBRARIES}
+        ${CUDA_LIBRARIES}
+        ${TENSORRT_LIBRARIES}
 )
 
 target_link_libraries(tensorflow_inferencer
-  ${catkin_LIBRARIES}
-  ${TENSORFLOW_LIBRARIES}
-  ${PYTHON3_LIBRARIES}
+        ${catkin_LIBRARIES}
+        ${TENSORFLOW_LIBRARIES}
+        ${PYTHON3_LIBRARIES}
+)
+
+set_target_properties(torch_inferencer PROPERTIES LINK_FLAGS "-Wl,--no-undefined")
+
+target_link_libraries(torch_inferencer
+        /usr/lib/aarch64-linux-gnu/libcublas.so
+        /home/zhongzheng/env/lib/python3.6/site-packages/torch/lib/libc10.so
+        /home/zhongzheng/env/lib/python3.6/site-packages/torch/lib/libtorch.so
+        /home/zhongzheng/env/lib/python3.6/site-packages/torch/lib/libtorch_cuda.so
+
+        /usr/local/cuda/lib64/stubs/libcuda.so
+        /usr/local/cuda/lib64/libnvrtc.so
+        /usr/local/cuda/lib64/libnvToolsExt.so
+        /usr/local/cuda/lib64/libcudart.so
+        /home/zhongzheng/env/lib/python3.6/site-packages/torch/lib/libc10_cuda.so
+        /home/zhongzheng/env/lib/python3.6/site-packages/torch/lib/libtorch_cpu.so
+
+        ${catkin_LIBRARIES}
+        ${CUDA_LIBRARIES}
 )
 
 #############
