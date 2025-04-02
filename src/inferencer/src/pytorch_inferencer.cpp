@@ -39,20 +39,20 @@ private:
     torch::Dtype outputDtype;
 
 public:
-    PTInferencer()
+    PTInferencer() override
             : device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
               inputBufferPtr(nullptr), outputBufferPtr(nullptr){}
 
     ~PTInferencer(){}
 
-    void* createInferencer(void* options){
+    void* createInferencer(void* options) override {
         return new PTInferencer();
     }
 
     void deleteInferencer(){
        delete this;
     }
-    bool loadModel(const char* modelName)
+    bool loadModel(const std::string& modelName) override
     {
         this-> modelName = modelName;
         try {
@@ -68,7 +68,7 @@ public:
 
         return true;
     }
-    unsigned getInputBuffer(void** buffer)
+    unsigned getInputBuffer(void** buffer) override
     {
         /*boost::filesystem::path modelPath(this->modelName);
         boost::filesystem::path jsonPath = modelPath.replace_extension("json");
@@ -114,7 +114,7 @@ public:
         *buffer = inputTensor.contiguous().data_ptr<float>();
         return inputTensor.numel() * sizeof(float);
     }
-    unsigned getOutputBuffer(void** buffer)
+    unsigned getOutputBuffer(void** buffer) override
     {
         /*
         boost::filesystem::path modelPath(this->modelName);
@@ -161,7 +161,7 @@ public:
         //inferencer->outputBuffer = buffer;
     }
 
-    bool infer()
+    bool infer() override
     {
         try {
             std::vector<torch::jit::IValue> inputs;
