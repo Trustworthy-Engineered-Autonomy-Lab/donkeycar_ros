@@ -13,9 +13,11 @@
 #include <tensorflow/core/public/session.h>
 #include <tensorflow/core/protobuf/meta_graph.pb.h>
 #include <tensorflow/cc/saved_model/loader.h>
+#include <inferencer/inferencer.h>
 
 #include <boost/process/environment.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/dll/alias.hpp>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,8 +29,22 @@ extern const char* TF_Version(void);
 }
 #endif
 
-struct TFInferencer
+namespace inferencer
 {
+class TFInferencer : public Inferencer
+{
+    
+private:
+    tensorflow::SavedModelBundle modelBundle;
+    tensorflow::SignatureDef signature;
+    std::vector<std::pair<std::string,tensorflow::Tensor>> inputTensorPairs;
+    std::vector<std::string> outputTensorNames;
+    std::vector<tensorflow::Tensor> outputTensors;
+
+    std::string errorString;
+
+    void** outputBuffer;
+    public:
     TFInferencer()
     {
         // boost::process::environment env = boost::this_process::environment();
@@ -42,84 +58,55 @@ struct TFInferencer
     {
 
     }
-
-    tensorflow::SavedModelBundle modelBundle;
-    tensorflow::SignatureDef signature;
-    std::vector<std::pair<std::string,tensorflow::Tensor>> inputTensorPairs;
-    std::vector<std::string> outputTensorNames;
-    std::vector<tensorflow::Tensor> outputTensors;
-
-    std::string errorString;
-
-    void** outputBuffer;
-};
-
-extern "C" void* createInferencer(void* options)
-{
-    return new TFInferencer();
-}
-
-extern "C" void deleteInferencer(void* inferencerHandle)
-{
-    if(inferencerHandle != nullptr)
-    {
-        delete reinterpret_cast<TFInferencer*>(inferencerHandle);
-    }
-}
-
-extern "C" bool loadModel(void* inferencerHandle, const char* modelName)
-{
-    if(inferencerHandle == nullptr)
-        return false;
     
-    TFInferencer* inferencer = reinterpret_cast<TFInferencer*>(inferencerHandle);
+static std::shared_ptr<TFInferencer> create(){
+    return std::make_shared<TFInferencer>();
+}
 
+bool loadModel(const std::string& modelName) final
+{
     tensorflow::SessionOptions sessionOptions;
     tensorflow::RunOptions runOptions;
     
-    tensorflow::Status status = tensorflow::LoadSavedModel(sessionOptions, runOptions, {modelName}, {"serve"}, &inferencer->modelBundle);
+    tensorflow::Status status = tensorflow::LoadSavedModel(sessionOptions, runOptions, {modelName}, {"serve"}, &this->modelBundle);
 
     if (!status.ok()) 
     {
-        inferencer->errorString = status.ToString();
+        this->errorString = status.ToString();
         return false;
     }
 
-    const tensorflow::MetaGraphDef& graphDef = inferencer->modelBundle.meta_graph_def;
+    const tensorflow::MetaGraphDef& graphDef = this->modelBundle.meta_graph_def;
 
     const auto& signatureDefMap = graphDef.signature_def();
     
     auto it = signatureDefMap.find("serving_default");
     if(it == signatureDefMap.end())
     {
-        inferencer->errorString = "Failed to find the default signature";
+        this->errorString = "Failed to find the default signature";
         return false;
     }
 
-    inferencer->signature = it->second;
+    this->signature = it->second;
     return true;
 }
 
-extern "C" unsigned getInputBuffer(void* inferencerHandle, const char* inputName, void** buffer)
+unsigned getInputBuffer(const std::string& inputName, void** buffer) final
 {
-    if(inferencerHandle == nullptr)
-        return false;
-    
-    TFInferencer* inferencer = reinterpret_cast<TFInferencer*>(inferencerHandle);
 
-    auto it = inferencer->signature.inputs().find(inputName);
-    if(it == inferencer->signature.inputs().end())
+    auto it = this->signature.inputs().find(inputName);
+    if(it == this->signature.inputs().end())
     {
         std::ostringstream errorStream;
         errorStream << "Invalid input tensor name: " << inputName << ". Valid names are: ";
 
         // Iterate over all valid input tensor names
-        for (const auto& input : inferencer->signature.inputs())
+        for (const auto& input : this->signature.inputs())
         {
             errorStream << input.first << " ";
         }
 
-        inferencer->errorString = errorStream.str();
+        this->errorString = errorStream.str();
         return 0;
     }
 
@@ -127,17 +114,17 @@ extern "C" unsigned getInputBuffer(void* inferencerHandle, const char* inputName
     const std::string& tensorName = tensorInfo.name();
 
     auto it1 = std::find_if(
-        inferencer->inputTensorPairs.begin(),
-        inferencer->inputTensorPairs.end(),
+        this->inputTensorPairs.begin(),
+        this->inputTensorPairs.end(),
         [&tensorName](const std::pair<std::string, tensorflow::Tensor>& pair) {
             return pair.first == tensorName; // Compare the tensor name
         });
     
-    if(it1 != inferencer->inputTensorPairs.end())
+    if(it1 != this->inputTensorPairs.end())
     {
-        int index = std::distance(inferencer->inputTensorPairs.begin(), it1);
-        *buffer = inferencer->inputTensorPairs[index].second.data();
-        return inferencer->inputTensorPairs[index].second.tensor_data().size();
+        int index = std::distance(this->inputTensorPairs.begin(), it1);
+        *buffer = this->inputTensorPairs[index].second.data();
+        return this->inputTensorPairs[index].second.tensor_data().size();
     }
 
     tensorflow::TensorShapeProto shapeProto = tensorInfo.tensor_shape();
@@ -155,49 +142,45 @@ extern "C" unsigned getInputBuffer(void* inferencerHandle, const char* inputName
 
     if (!inputTensor.IsInitialized())
     {
-        inferencer->errorString = "Tensor is not initialized";
+        this->errorString = "Tensor is not initialized";
         return 0;
     }
 
     size_t inputByteSize = inputTensor.tensor_data().size();
 
-    inferencer->inputTensorPairs.emplace_back(tensorName, std::move(inputTensor));
+    this->inputTensorPairs.emplace_back(tensorName, std::move(inputTensor));
 
-    *buffer = inferencer->inputTensorPairs.back().second.data();
+    *buffer = this->inputTensorPairs.back().second.data();
 
     return inputByteSize;
 } 
 
-extern "C" unsigned getOutputBuffer(void* inferencerHandle, const char* outputName, void** buffer)
-{
-    if(inferencerHandle == nullptr)
-        return false;
-    
-    TFInferencer* inferencer = reinterpret_cast<TFInferencer*>(inferencerHandle);
+unsigned getOutputBuffer(const std::string& outputName, void** buffer) final
+{    
 
-    auto it = inferencer->signature.outputs().find(outputName);
-    if(it == inferencer->signature.outputs().end())
+    auto it = this->signature.outputs().find(outputName);
+    if(it == this->signature.outputs().end())
     {
         std::ostringstream errorStream;
         errorStream << "Invalid output tensor name: " << outputName << ". Valid names are: ";
 
         // Iterate over all valid input tensor names
-        for (const auto& output : inferencer->signature.outputs())
+        for (const auto& output : this->signature.outputs())
         {
             errorStream << output.first << " ";
         }
-        inferencer->errorString = errorStream.str();
+        this->errorString = errorStream.str();
         return 0;
     }
 
     const tensorflow::TensorInfo& tensorInfo = it->second;
     const std::string& tensorName = tensorInfo.name();
 
-    auto it1 = std::find(inferencer->outputTensorNames.begin(), inferencer->outputTensorNames.end(), tensorName);
-    if(it1 != inferencer->outputTensorNames.end())
+    auto it1 = std::find(this->outputTensorNames.begin(), this->outputTensorNames.end(), tensorName);
+    if(it1 != this->outputTensorNames.end())
     {
-        int index = std::distance(inferencer->outputTensorNames.begin(), it1);
-        return inferencer->outputTensors[index].tensor_data().size();
+        int index = std::distance(this->outputTensorNames.begin(), it1);
+        return this->outputTensors[index].tensor_data().size();
     }
 
     tensorflow::TensorShapeProto shapeProto = tensorInfo.tensor_shape();
@@ -214,43 +197,40 @@ extern "C" unsigned getOutputBuffer(void* inferencerHandle, const char* outputNa
 
     if (!outputTensor.IsInitialized())
     {
-        inferencer->errorString = "Tensor is not initialized";
+        this->errorString = "Tensor is not initialized";
         return 0;
     }
 
     size_t outputByteSize = outputTensor.tensor_data().size();
 
-    inferencer->outputBuffer = buffer;
+    this->outputBuffer = buffer;
 
-    inferencer->outputTensorNames.emplace_back(tensorName);
-    inferencer->outputTensors.emplace_back(std::move(outputTensor));
+    this->outputTensorNames.emplace_back(tensorName);
+    this->outputTensors.emplace_back(std::move(outputTensor));
 
     return outputByteSize;
 } 
 
-extern "C" bool infer(void* inferencerHandle)
+    bool infer() final
 {
-    if(inferencerHandle == nullptr)
-        return false;
     
-    TFInferencer* inferencer = reinterpret_cast<TFInferencer*>(inferencerHandle);
-
-    tensorflow::Status status = inferencer->modelBundle.GetSession()->Run(inferencer->inputTensorPairs, inferencer->outputTensorNames, {}, &inferencer->outputTensors);
+    tensorflow::Status status = this->modelBundle.GetSession()->Run(this->inputTensorPairs, this->outputTensorNames, {}, &this->outputTensors);
     if (!status.ok())
     {
-        inferencer->errorString = "Failed to run inference " + status.ToString();
+        this->errorString = "Failed to run inference " + status.ToString();
         return false;
     }
 
-    *inferencer->outputBuffer = const_cast<void*>(reinterpret_cast<const void*>(inferencer->outputTensors[0].tensor_data().data()));
+    *this->outputBuffer = const_cast<void*>(reinterpret_cast<const void*>(this->outputTensors[0].tensor_data().data()));
 
     return true;
 }
 
-extern "C" const char* getErrorString(void* inferencerHandle)
+    const std::string& getErrorString() const final
 {
-    if(inferencerHandle == nullptr)
-            return nullptr;
-    
-    return reinterpret_cast<TFInferencer*>(inferencerHandle)->errorString.c_str();
+    return this->errorString;
 }
+};
+}
+
+BOOST_DLL_ALIAS(inferencer::TFInferencer::create, tensorflow_inferencer);

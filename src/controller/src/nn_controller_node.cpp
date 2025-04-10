@@ -10,6 +10,9 @@
 
 #include <boost/thread.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/process/search_path.hpp>
+#include <boost/dll.hpp>
+#include <boost/function.hpp>
 
 #include <controller/controller.h>
 #include <inferencer/inferencer.h>
@@ -45,7 +48,7 @@ class NNController: controller::Controller
 
     ros::NodeHandle& nh;
     Status status;
-    std::unique_ptr<Inferencer> inferencer;
+    std::shared_ptr<inferencer::Inferencer> inferencer;
     cv::Mat imageMat;
 
     image_transport::ImageTransport it;
@@ -64,13 +67,19 @@ class NNController: controller::Controller
     {
         if(status == Status::INIT_BACKEND)
         {
-            std::string backend = nh.param<std::string>(ros::this_node::getName() + "/backend", "tensorflow");
+            std::string backend = nh.param<std::string>(ros::this_node::getName() + "/backend", "tensorflow") + "_inferencer";
 
             try
             {
-                inferencer = std::make_unique<Inferencer>(backend);
+                using Creator = std::shared_ptr<inferencer::Inferencer>();
+                boost::function<Creator> creator = boost::dll::import_alias<Creator>(backend, backend,
+                                                                boost::dll::load_mode::append_decorations | 
+                                                                boost::dll::load_mode::search_system_folders
+                                                            );
+
+                inferencer = creator();
             }
-            catch(const std::runtime_error& e)
+            catch(const boost::system::system_error & e)
             {
                 ROS_ERROR_ONCE("Failed to initialize the %s backend: %s. Will retry",backend.c_str(),e.what());
                 return;
@@ -98,7 +107,7 @@ class NNController: controller::Controller
 
             try
             {
-                result = inferencer->loadModel(modelName.c_str());
+                result = inferencer->loadModel(modelName);
             }
             catch(const std::runtime_error& e)
             {
@@ -109,7 +118,7 @@ class NNController: controller::Controller
 
             if(!result)
             {
-                ROS_ERROR_ONCE("Failed to load model file %s: %s. Will retry",modelName.c_str(), inferencer->getErrorString());
+                ROS_ERROR_ONCE("Failed to load model file %s: %s. Will retry",modelName.c_str(), inferencer->getErrorString().c_str());
                 return;
             }
 
@@ -122,7 +131,7 @@ class NNController: controller::Controller
 
             try
             {
-                outputBufferSize = inferencer->getOutputBuffer(outputName.c_str(), &outputBuffer);
+                outputBufferSize = inferencer->getOutputBuffer(outputName, &outputBuffer);
             }
             catch(const std::runtime_error& e)
             {
@@ -133,7 +142,7 @@ class NNController: controller::Controller
 
             if(outputBufferSize == 0)
             {
-                ROS_ERROR_ONCE("Failed to allocate output tensor: %s. Will retry", inferencer->getErrorString());
+                ROS_ERROR_ONCE("Failed to allocate output tensor: %s. Will retry", inferencer->getErrorString().c_str());
                 return;
             }
 
@@ -154,7 +163,7 @@ class NNController: controller::Controller
             
             try
             {
-                inputBufferSize = inferencer->getInputBuffer(inputName.c_str(), &inputBuffer);
+                inputBufferSize = inferencer->getInputBuffer(inputName, &inputBuffer);
             }
             catch(const std::runtime_error& e)
             {
@@ -165,7 +174,7 @@ class NNController: controller::Controller
 
             if(inputBufferSize == 0)
             {
-                ROS_ERROR_ONCE("Failed to allocate input tensor %s: %s. Will retry",inputName.c_str(),inferencer->getErrorString());
+                ROS_ERROR_ONCE("Failed to allocate input tensor %s: %s. Will retry",inputName.c_str(),inferencer->getErrorString().c_str());
                 return;
             }
 
@@ -237,7 +246,7 @@ class NNController: controller::Controller
 
         if(!inferencer->infer())
         {
-            ROS_ERROR("Failed to run inference %s", inferencer->getErrorString());
+            ROS_ERROR("Failed to run inference %s", inferencer->getErrorString().c_str());
             imageSub.shutdown();
             status = Status::INIT_BACKEND;
             return;
