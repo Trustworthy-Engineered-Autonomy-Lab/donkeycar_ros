@@ -11,6 +11,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -20,8 +21,8 @@ extern const char* PT_Version(void);
 #ifdef __cplusplus
 }
 #endif
-
-class PTInferencer
+namespace inferencer{
+class PTInferencer : public Inferencer
 {
 private:
 
@@ -50,7 +51,7 @@ public:
     }
 
     void deleteInferencer(){
-       delete this;
+        delete this;
     }
     bool loadModel(const std::string& modelName) override
     {
@@ -219,3 +220,5 @@ public:
         }
     }
 };
+}
+BOOST_DLL_ALIAS(inferencer::PTInferencer::create, pytorch_inferencer);
