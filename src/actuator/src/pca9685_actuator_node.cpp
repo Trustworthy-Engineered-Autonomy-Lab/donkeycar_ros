@@ -45,6 +45,7 @@ class PCA9685
             return false;
         }
 
+        reset();
         return setPWMFreq(freqency);
     }
 
@@ -127,6 +128,12 @@ class PCA9685
     static constexpr uint8_t LED0_OFF_L = 0x08;
     static constexpr uint8_t LED0_OFF_H = 0x09;
     static constexpr uint8_t PRESCALE = 0xFE;
+
+    void reset()
+    {
+        uint8_t buffer[2] = {0x00, 0x06};
+        write(fileHandle, buffer, 2);
+    }
 
     bool writeRegister(uint8_t reg, uint8_t value) 
     {

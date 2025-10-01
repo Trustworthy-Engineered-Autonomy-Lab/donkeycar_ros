@@ -29,7 +29,7 @@
         <param name="steer_mid_pulsewidth" value="1600" />
     </node>
 
-    <env name="GSCAM_CONFIG" value="nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1280, height=720, format=NV12, framerate=30/1 ! nvvidconv flip-method=2 ! nvvidconv ! video/x-raw, width=224, height=224, format=BGRx ! videoconvert " />
+    <env name="GSCAM_CONFIG" value="nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1280, height=720, format=NV12, framerate=30/1 ! nvvidconv ! video/x-raw, flip-method=2, width=224, height=224, format=BGRx ! videoconvert " />
 
     <node pkg="gscam" type="gscam" name="camera">
         <!-- <param name="camera_info_url" value="package://localcam/calibrations/${NAME}.yaml" />
