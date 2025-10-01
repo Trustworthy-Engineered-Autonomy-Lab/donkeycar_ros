@@ -233,6 +233,23 @@ class RTInferencer: public Inferencer
 
         config->setMaxWorkspaceSize(totalMemory/4);
 
+        nvinfer1::IOptimizationProfile* profile = builder->createOptimizationProfile();
+        if (profile == nullptr)
+        {
+            throw std::runtime_error("Failed to create tensorrt optimization profile");
+        }
+
+        nvinfer1::ITensor* input = network->getInput(0);
+        const char* inputName = input->getName();
+
+        nvinfer1::Dims dims = input->getDimensions();
+        dims.d[0] = 1;
+
+        profile->setDimensions(inputName, nvinfer1::OptProfileSelector::kMIN, dims);
+        profile->setDimensions(inputName, nvinfer1::OptProfileSelector::kOPT, dims);
+        profile->setDimensions(inputName, nvinfer1::OptProfileSelector::kMAX, dims);
+        config->addOptimizationProfile(profile);
+
         std::unique_ptr<nvinfer1::ICudaEngine, NvInferDeleter> engine{builder->buildEngineWithConfig(*network, *config)};
         if(engine == nullptr)
         {

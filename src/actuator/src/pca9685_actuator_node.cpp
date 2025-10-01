@@ -91,6 +91,7 @@ class PCA9685
             errorString = "Failed to restart PCA9685";
             return false;
         }
+        return true;
     }
 
     bool setPWMChannel(int channel, float dutyCycle) 
