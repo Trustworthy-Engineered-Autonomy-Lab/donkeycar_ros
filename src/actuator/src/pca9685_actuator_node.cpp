@@ -211,11 +211,11 @@ class PCA9685Actuator: public actuator::Actuator
             float throttlePW;
             if(throttle > 0)
             {
-                throttlePW = throttle * (throttleMaxPW - throttleMidPW) + steerMidPW;
+                throttlePW = throttle * static_cast<float>(throttleMaxPW - throttleMidPW) + throttleMidPW;
             }
             else
             {
-                throttlePW = throttle * (throttleMidPW - throttleMinPW) + throttleMidPW;
+                throttlePW = throttle * static_cast<float>(throttleMidPW - throttleMinPW) + throttleMidPW;
             }
 
             ROS_DEBUG("Throttle pwm pulse width: %f us, Steer pwm pulse width: %f us", throttlePW, steerPW);

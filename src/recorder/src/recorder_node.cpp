@@ -24,21 +24,18 @@ class Recorder
     Recorder(ros::NodeHandle& nodeHandle):
     imageSub(nodeHandle, "/camera/image_raw", 10),
     motionSub(nodeHandle, "/combined_motion_cmd", 10),
-    syncSub(ApproxSyncPolicy(10), imageSub, motionSub),
-    imageCount(0),
-    enableFromCfg(false),
-    enableFromJs(false)
+    syncSub(ApproxSyncPolicy(10), imageSub, motionSub)
     {
         std::string nodeName = ros::this_node::getName();
         boost::filesystem::path dataFolder = nodeHandle.param<std::string>(nodeName + "/data_folder", "data");
-        downsampleRate = nodeHandle.param<int>(nodeName + "/downsample_rate", 1);
-        if(downsampleRate <= 0)
-        {
-            ROS_WARN("Invalid downsample rate %d", downsampleRate);
-            downsampleRate = 1;
-        }
         
-        recordButton = nodeHandle.param<int>(nodeName + "/record_button", 7);
+        imageCount = 0;
+        savedImageCount = 0;
+        lastSavedImageCount = 0;
+        enableFromCfg = false;
+        enableFromJs = false;
+        downsampleRate = 1;
+        recordButton = 5;
         recordButtonState = 0;
 
         syncSub.registerCallback(boost::bind(&Recorder::syncCallback,this,boost::placeholders::_1,boost::placeholders::_2));
@@ -69,6 +66,8 @@ class Recorder
     std::ofstream labelFile;
 
     unsigned imageCount;
+    unsigned savedImageCount;
+    unsigned lastSavedImageCount;
 
     bool enableFromJs;
     bool enableFromCfg;
@@ -112,7 +111,7 @@ class Recorder
             if(msg->buttons[recordButton])
             {
                 if(msg->buttons[recordButton] != recordButtonState)
-                    ROS_INFO("Start Recording");
+                    ROS_INFO("Start recording");
                 
                 enableFromJs = true;
 
@@ -127,15 +126,16 @@ class Recorder
             else
             {
                 if(msg->buttons[recordButton] != recordButtonState)
-                    ROS_INFO("Stop Recording");
+                    ROS_INFO("Stop recording, saved %d images, there are %d images in total", savedImageCount - lastSavedImageCount, savedImageCount);
                 enableFromJs = false;
+                lastSavedImageCount = savedImageCount;
             }
 
             recordButtonState = msg->buttons[recordButton];
         }
         catch(std::exception& e)
         {
-            ROS_ERROR_ONCE("Invaild button number: %s", e.what());
+            ROS_ERROR_THROTTLE(1.0, "Invaild button number: %s", e.what());
         }
     }
 
@@ -160,12 +160,14 @@ class Recorder
                 ROS_ERROR("cv_bridge exception: %s", e.what());
             }
 
-            std::string imageName = std::to_string(imageCount / downsampleRate) + ".jpg";
+            savedImageCount += 1;
+            std::string imageName = std::to_string(savedImageCount) + ".jpg";
             boost::filesystem::path imageFile = imageFolder/ imageName;
 
             cv::imwrite(imageFile.string(), cvImage->image);
             labelFile << imageName << "," << motion->steer << "," << motion->throttle << std::endl;
             ROS_DEBUG("Image %s saved!", imageFile.string().c_str());
+            
         }
 
         imageCount += 1;
@@ -188,6 +190,20 @@ class Recorder
                 closeDataFolder();
                 openDataFolder(config.data_folder);
             }
+        }
+        if(level & 0x4)
+        {
+            if(config.downsample_rate <= 0)
+                ROS_WARN("Invalid downsampling rate %d", config.downsample_rate);
+            else
+                downsampleRate = config.downsample_rate;
+        }
+        if(level & 0x8)
+        {
+            if(enableFromCfg || enableFromJs)
+                ROS_WARN("You can not change the record button while recording");
+            else
+                recordButton = config.record_button;
         }
     }
 };
