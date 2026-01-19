@@ -5,12 +5,13 @@
 
     <node pkg="controller" type="joystick_controller_node" name="joystick_controller_node" output="screen">
         <!-- Joystick Ratio Settings -->
-        <param name="controller/throttle_ratio" value="0.4"/>
+        <param name="controller/throttle_forward_ratio" value="0.4"/>
+        <param name="controller/throttle_reverse_ratio" value="1.0"/>
         <param name="controller/steer_ratio" value="-1"/>
         <!-- Joystick Channel Setting-->
         <param name="throttle_axis" value="4" />
         <param name="steer_axis" value="0" />
-    </node>1500
+    </node>
     <node pkg="actuator" type="pca9685_actuator_node" name="pca9685_actuator_node" output="screen">
         <!-- PWM Frequency and Bus Configuration -->
         <param name="bus_device" value="/dev/i2c-7" />
