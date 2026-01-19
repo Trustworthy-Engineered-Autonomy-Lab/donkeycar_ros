@@ -17,7 +17,8 @@
 class PCA9685
 {
     public:
-    PCA9685(std::string& deviceName, unsigned freqency = 60, unsigned address = 0x40)
+    PCA9685(std::string& deviceName, unsigned freqency = 60, unsigned address = 0x40):
+        fileHandle(-1)
     {
         Open(deviceName, address);
     }
@@ -51,11 +52,15 @@ class PCA9685
 
     void Close()
     {
-        uint8_t Mode = 0;
-        readRegister(MODE1, &Mode);
-        writeRegister(MODE1, Mode | 0x10);
+        if(fileHandle != -1)
+        {
+            uint8_t Mode = 0;
+            readRegister(MODE1, &Mode);
+            writeRegister(MODE1, Mode | 0x10);
 
-        close(fileHandle);
+            close(fileHandle);
+            fileHandle = -1;
+        }
     }
 
     bool setPWMFreq(int freqency)
@@ -223,16 +228,16 @@ class PCA9685Actuator: public actuator::Actuator
             if(!pca9685->setPWMChannel(throttleChannel, throttleDuty))
             {
                 ROS_ERROR("Failed to set throttle value: %s. Will retry", pca9685->getErrorString().c_str());
-                pca9685->Close();
                 status = Status::INITING;
+                pca9685->Close();
                 return;
             }
             
             if(!pca9685->setPWMChannel(steerChannel, steerDuty))
             {
                 ROS_ERROR("Failed to set steer angle: %s. Will retry", pca9685->getErrorString().c_str());
-                pca9685->Close();
                 status = Status::INITING;
+                pca9685->Close();
                 return;
             }
         }
@@ -283,8 +288,8 @@ class PCA9685Actuator: public actuator::Actuator
         {
             if(!pca9685->Open(busDevice, pwmFreq))
             {
-                pca9685->Close();
                 ROS_ERROR_ONCE("Failed to initialize PCA9685: %s. Will retry", pca9685->getErrorString().c_str());
+                pca9685->Close();
                 return;
             }
 

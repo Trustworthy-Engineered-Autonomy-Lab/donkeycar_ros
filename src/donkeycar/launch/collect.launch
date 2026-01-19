@@ -1,45 +1,20 @@
 <launch>
 
-    <node pkg="joy" type="joy_node" name="joy_node" output="screen">
-        <param name="dev_ff" value="/dev/input/event2"/> 
-    </node>
+    <include file="$(find donkeycar)/launch/drive.launch"/>
 
-    <node pkg="controller" type="joystick_controller_node" name="joystick_controller_node" output="screen">
-        <!-- Joystick Ratio Settings -->
-        <param name="throttle_ratio" value="0.9"/>
-        <param name="steer_ratio" value="-1"/>
-        <!-- Joystick Channel Setting-->
-        <param name="throttle_axis" value="4" />
-        <param name="steer_axis" value="0" />
-    </node>
-    <node pkg="actuator" type="pca9685_actuator_node" name="pca9685_actuator_node" output="screen">
-        <!-- PWM Frequency and Bus Configuration -->
-        <param name="bus_number" value="1" />
-        <param name="pwm_frequency" value="60" />
-
-        <!-- Throttle Configuration -->
-        <param name="throttle_pwm_channel" value="0" />
-        <param name="throttle_min_pulsewidth" value="1000" />
-        <param name="throttle_max_pulsewidth" value="2000" />
-        <param name="throttle_mid_pulsewidth" value="1500" />
-
-        <!-- Steer Configuration -->
-        <param name="steer_pwm_channel" value="1" />
-        <param name="steer_min_pulsewidth" value="1200" />
-        <param name="steer_max_pulsewidth" value="2000" />
-        <param name="steer_mid_pulsewidth" value="1600" />
-    </node>
-
-    
-    <env name="GSCAM_CONFIG" value="nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1280, height=720, format=NV12, framerate=30/1 ! nvvidconv flip-method=0 ! nvvidconv ! video/x-raw, width=1280, height=720, format=BGRx ! videoconvert" />
+    <env name="GSCAM_CONFIG" value="nvarguscamerasrc 
+                                    ! video/x-raw(memory:NVMM), width=1280, height=720, format=NV12, framerate=30/1 
+                                    ! nvvidconv flip-method=2
+                                    ! video/x-raw, width=224, height=224, format=BGRx
+                                    ! videocrop left=0 right=0 top=80 bottom=0
+                                    ! videoconvert " />
 
     <node pkg="gscam" type="gscam" name="camera">
-        <!-- <param name="camera_info_url" value="package://localcam/calibrations/${NAME}.yaml" />
-        <remap from="camera/image_raw" to="$(arg cam_name)/image_raw" /> -->
     </node>
 
     <node pkg="recorder" type="recorder_node" name="recorder_node" output="screen">
         <param name="data_folder" value="$(find donkeycar)/data"/>
-        <param name="record_threshold" value="0.05"/>
+        <param name="record_button" value="5"/>
+        <param name="downsample_rate" value="30"/>
     </node>
 </launch>
