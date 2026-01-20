@@ -126,9 +126,13 @@ class Recorder
             else
             {
                 if(msg->buttons[recordButton] != recordButtonState)
+                {
                     ROS_INFO("Stop recording, saved %d images, there are %d images in total", savedImageCount - lastSavedImageCount, savedImageCount);
+                    lastSavedImageCount = savedImageCount;
+                }
+
                 enableFromJs = false;
-                lastSavedImageCount = savedImageCount;
+                
             }
 
             recordButtonState = msg->buttons[recordButton];
