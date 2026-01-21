@@ -24,22 +24,19 @@ class Recorder
     Recorder(ros::NodeHandle& nodeHandle):
     imageSub(nodeHandle, "/camera/image_raw", 10),
     motionSub(nodeHandle, "/combined_motion_cmd", 10),
-    syncSub(ApproxSyncPolicy(10), imageSub, motionSub),
-    imageCount(0)
+    syncSub(ApproxSyncPolicy(10), imageSub, motionSub)
     {
         std::string nodeName = ros::this_node::getName();
         boost::filesystem::path dataFolder = nodeHandle.param<std::string>(nodeName + "/data_folder", "data");
         
-        startButton = nodeHandle.param<int>(nodeName + "/start_button", 7);
-        stopButton = nodeHandle.param<int>(nodeName + "/stop_button", 6);
-        throttleThreshold = nodeHandle.param<float>(nodeName + "/throttle_threshold", 0.05);
-        if(throttleThreshold < 0)
-        {
-            ROS_WARN("Invaild throttle threshold %f. Using default value 0.05", throttleThreshold);
-            throttleThreshold = 0.05;
-        }
-
-        openDataFolder(dataFolder);
+        imageCount = 0;
+        savedImageCount = 0;
+        lastSavedImageCount = 0;
+        enableFromCfg = false;
+        enableFromJs = false;
+        downsampleRate = 1;
+        recordButton = 5;
+        recordButtonState = 0;
 
         syncSub.registerCallback(boost::bind(&Recorder::syncCallback,this,boost::placeholders::_1,boost::placeholders::_2));
 
@@ -69,13 +66,17 @@ class Recorder
     std::ofstream labelFile;
 
     unsigned imageCount;
+    unsigned savedImageCount;
+    unsigned lastSavedImageCount;
 
-    bool enable;
-    float throttleThreshold;
-    float recordOnThrottle;
+    bool enableFromJs;
+    bool enableFromCfg;
 
-    int startButton;
-    int stopButton;
+    int recordButton;
+    int recordButtonState;
+    int downsampleRate;
+
+    bool dataFolderCreated;
 
     void openDataFolder(const boost::filesystem::path& dataFolder)
     {
@@ -107,10 +108,12 @@ class Recorder
     {
         try
         {
-            if(msg->buttons[startButton])
+            if(msg->buttons[recordButton])
             {
-                ROS_INFO("Start Recording");
-                enable = true;
+                if(msg->buttons[recordButton] != recordButtonState)
+                    ROS_INFO("Start recording");
+                
+                enableFromJs = true;
 
                 // sensor_msgs::JoyFeedbackArray feedbackArray;
                 // sensor_msgs::JoyFeedback feedback;
@@ -120,67 +123,69 @@ class Recorder
                 // feedbackArray.array.push_back(feedback);  
                 // joyFeedbackPub.publish(feedbackArray);
             }
-            else if(msg->buttons[stopButton])
+            else
             {
-                ROS_INFO("Stop Recording");
-                enable = false;
+                if(msg->buttons[recordButton] != recordButtonState)
+                {
+                    ROS_INFO("Stop recording, saved %d images, there are %d images in total", savedImageCount - lastSavedImageCount, savedImageCount);
+                    lastSavedImageCount = savedImageCount;
+                }
 
+                enableFromJs = false;
                 
             }
+
+            recordButtonState = msg->buttons[recordButton];
         }
         catch(std::exception& e)
         {
-            ROS_ERROR_ONCE("Invaild button number: %s", e.what());
+            ROS_ERROR_THROTTLE(1.0, "Invaild button number: %s", e.what());
         }
     }
 
 
     void syncCallback(const sensor_msgs::ImageConstPtr& image, const boost::shared_ptr<const controller::motion_cmd>& motion)
     {
+        bool enable = enableFromCfg || enableFromJs;
+
         if(!enable)
             return;
 
-        if(recordOnThrottle && std::fabs(motion->throttle) < throttleThreshold)
-            return;
-
-        cv_bridge::CvImageConstPtr cvImage;
-        try
+        if(imageCount % downsampleRate == 0)
         {
-            cvImage = cv_bridge::toCvShare(image, image->encoding);
-        }
-        catch(cv_bridge::Exception& e)
-        {
-            ROS_ERROR("cv_bridge exception: %s", e.what());
-        }
 
-        std::string imageName = std::to_string(imageCount) + ".jpg";
-        boost::filesystem::path imageFile = imageFolder/ imageName;
+            cv_bridge::CvImageConstPtr cvImage;
+            try
+            {
+                cvImage = cv_bridge::toCvShare(image, image->encoding);
+            }
+            catch(cv_bridge::Exception& e)
+            {
+                ROS_ERROR("cv_bridge exception: %s", e.what());
+            }
 
-        cv::imwrite(imageFile.string(), cvImage->image);
-        labelFile << imageName << "," << motion->steer << "," << motion->throttle << std::endl;
+            savedImageCount += 1;
+            std::string imageName = std::to_string(savedImageCount) + ".jpg";
+            boost::filesystem::path imageFile = imageFolder/ imageName;
+
+            cv::imwrite(imageFile.string(), cvImage->image);
+            labelFile << imageName << "," << motion->steer << "," << motion->throttle << std::endl;
+            ROS_DEBUG("Image %s saved!", imageFile.string().c_str());
+            
+        }
 
         imageCount += 1;
-
-        ROS_DEBUG("Image %s saved!", imageFile.string().c_str());
     }
 
     void serverCallback(recorder::recorderConfig &config, uint32_t level)
     {
         if(level & 0x1)
         {
-            recordOnThrottle = config.record_on_throttle;
+            enableFromCfg = config.enable;
         }
         if(level & 0x2)
         {
-            throttleThreshold = config.record_threshold;
-        }
-        if(level & 0x4)
-        {
-            enable = config.enable;
-        }
-        if(level & 0x8)
-        {
-            if(enable)
+            if(enableFromCfg || enableFromJs)
             {
                 ROS_WARN("You can not change the data folder while recording");
             }
@@ -189,6 +194,20 @@ class Recorder
                 closeDataFolder();
                 openDataFolder(config.data_folder);
             }
+        }
+        if(level & 0x4)
+        {
+            if(config.downsample_rate <= 0)
+                ROS_WARN("Invalid downsampling rate %d", config.downsample_rate);
+            else
+                downsampleRate = config.downsample_rate;
+        }
+        if(level & 0x8)
+        {
+            if(enableFromCfg || enableFromJs)
+                ROS_WARN("You can not change the record button while recording");
+            else
+                recordButton = config.record_button;
         }
     }
 };

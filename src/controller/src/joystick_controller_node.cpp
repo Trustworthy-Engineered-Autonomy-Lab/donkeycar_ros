@@ -8,17 +8,19 @@
 #include <string>
 #include <stdexcept>
 
+
 class JoystickController: controller::Controller
 {
     public:
     JoystickController(ros::NodeHandle& nodeHandle):server(nodeHandle)
     {
-        throttle_axis = nodeHandle.param<int>("throttle_axis", 4);
-        steer_axis = nodeHandle.param<int>("steer_axis", 0);
+        throttle_axis = 1;
+        steer_axis = 0;
+        server.setCallback(boost::bind(&JoystickController::serverCallback,this,boost::placeholders::_1,boost::placeholders::_2));
+
         ROS_INFO("Joystick axis %d is mapped to throttle, axis %d is mapped to steer", throttle_axis, steer_axis);
 
         joystickSub = nodeHandle.subscribe<sensor_msgs::Joy>("/joy", 10, boost::bind(&JoystickController::callback,this,boost::placeholders::_1));
-        server.setCallback(boost::bind(&JoystickController::serverCallback,this,boost::placeholders::_1,boost::placeholders::_2));
     }
 
     private:
@@ -40,6 +42,11 @@ class JoystickController: controller::Controller
         {
             ROS_WARN_ONCE("Invaild joystick axis number %d for throttle.", throttle_axis);
         }
+
+        // if(throttle > 0)
+        //     throttle = std::log(1 + throttle * 1.71828);
+        // else
+        //     throttle = -std::log(1 - throttle * 1.71828);
 
         float steer = 0;
         try
