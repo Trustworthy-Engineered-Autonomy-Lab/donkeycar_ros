@@ -1,4 +1,5 @@
 #include <ros/ros.h>
+#include <std_msgs/UInt64.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/Joy.h>
 #include <sensor_msgs/JoyFeedbackArray.h>
@@ -43,6 +44,8 @@ class Recorder
         joySub = nodeHandle.subscribe<sensor_msgs::Joy>("joy", 10, boost::bind(&Recorder::joyCallback, this, boost::placeholders::_1));
         joyFeedbackPub = nodeHandle.advertise<sensor_msgs::JoyFeedbackArray>("/joy/set_feedback", 10);
         server.setCallback(boost::bind(&Recorder::serverCallback,this,boost::placeholders::_1,boost::placeholders::_2));
+
+        savedCountPub = nodeHandle.advertise<std_msgs::UInt64>("/recorder/saved_count", 10);
     }
 
     ~Recorder()
@@ -61,13 +64,14 @@ class Recorder
     message_filters::Synchronizer<ApproxSyncPolicy> syncSub;
     ros::Subscriber joySub;
     ros::Publisher joyFeedbackPub;
+    ros::Publisher savedCountPub;
 
     boost::filesystem::path imageFolder;
     std::ofstream labelFile;
 
-    unsigned imageCount;
-    unsigned savedImageCount;
-    unsigned lastSavedImageCount;
+    uint64_t imageCount;
+    uint64_t savedImageCount;
+    uint64_t lastSavedImageCount;
 
     bool enableFromJs;
     bool enableFromCfg;
@@ -127,7 +131,7 @@ class Recorder
             {
                 if(msg->buttons[recordButton] != recordButtonState)
                 {
-                    ROS_INFO("Stop recording, saved %d images, there are %d images in total", savedImageCount - lastSavedImageCount, savedImageCount);
+                    ROS_INFO("Stop recording, saved %ld images, there are %ld images in total", savedImageCount - lastSavedImageCount, savedImageCount);
                     lastSavedImageCount = savedImageCount;
                 }
 
@@ -172,6 +176,9 @@ class Recorder
             labelFile << imageName << "," << motion->steer << "," << motion->throttle << std::endl;
             ROS_DEBUG("Image %s saved!", imageFile.string().c_str());
             
+            std_msgs::UInt64 msg;
+            msg.data = savedImageCount;
+            savedCountPub.publish(msg);
         }
 
         imageCount += 1;

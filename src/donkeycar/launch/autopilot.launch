@@ -15,7 +15,7 @@
         <param name="steer_ratio" value="-1"/>
         <param name="backend" value="tensorrt"/>
         
-        <param name="model_file" value="$(find donkeycar)/models/noise2000_500_500/best.onnx"/>
+        <param name="model_file" value="$(find donkeycar)/models/best.onnx"/>
         <param name="input_name" value="image"/>
         <param name="output_name" value="steer"/>
 
