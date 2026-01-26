@@ -68,6 +68,7 @@ class Recorder
     ros::Publisher savedCountPub;
 
     boost::filesystem::path imageFolder;
+    boost::filesystem::path labelFilePath;
     std::ofstream labelFile;
 
     uint64_t imageCount;
@@ -82,21 +83,6 @@ class Recorder
     int downsampleRate;
 
     bool dataFolderCreated;
-
-    void openDataFolder(const boost::filesystem::path& dataFolder)
-    {
-        imageFolder = dataFolder / "images";
-        boost::filesystem::create_directories(imageFolder);
-
-        ROS_INFO_STREAM("Create folder " + boost::filesystem::absolute(dataFolder).string());
-
-        labelFile = std::ofstream((dataFolder/ "labels.csv").string());
-    }
-
-    void closeDataFolder()
-    {
-        labelFile.close();
-    }
 
     void joyCallback(const sensor_msgs::Joy::ConstPtr& msg)
     {
@@ -159,8 +145,19 @@ class Recorder
             }
 
             savedImageCount += 1;
+            if(!boost::filesystem::exists(imageFolder))
+            {
+                boost::filesystem::create_directories(imageFolder);
+                ROS_INFO_STREAM("Created folder " + boost::filesystem::absolute(imageFolder).string());
+            }
+            if(!boost::filesystem::exists(labelFilePath))
+            {
+                labelFile = std::ofstream(labelFilePath.string());
+                ROS_INFO_STREAM("Opened label file " + labelFilePath.string());
+            }
+
             std::string imageName = std::to_string(savedImageCount) + ".jpg";
-            boost::filesystem::path imageFile = imageFolder/ imageName;
+            boost::filesystem::path imageFile = imageFolder / imageName;
 
             cv::imwrite(imageFile.string(), cvImage->image);
             labelFile << imageName << "," << motion->steer << "," << motion->throttle << std::endl;
@@ -192,9 +189,11 @@ class Recorder
                 ros::NodeHandle("~").setParam("data_folder_resolved", dataFolder.string());
                 if(dataFolder != imageFolder.parent_path())
                 {
-                    closeDataFolder();
-                    openDataFolder(dataFolder);
+                    labelFile.close();
+                    imageFolder = dataFolder / "images";
+                    labelFilePath = imageFolder.parent_path() / "labels.csv";
                     imageCount = 0;
+                    savedImageCount = 0;
                 }
             }
         }
