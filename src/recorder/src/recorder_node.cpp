@@ -18,6 +18,7 @@
 
 #include <boost/filesystem.hpp>
 #include <fstream>
+#include <ctime>
 
 class Recorder
 {
@@ -28,7 +29,7 @@ class Recorder
     syncSub(ApproxSyncPolicy(10), imageSub, motionSub)
     {
         std::string nodeName = ros::this_node::getName();
-        boost::filesystem::path dataFolder = nodeHandle.param<std::string>(nodeName + "/data_folder", "data");
+        // boost::filesystem::path dataFolder = nodeHandle.param<std::string>(nodeName + "/data_folder", "data");
         
         imageCount = 0;
         savedImageCount = 0;
@@ -84,23 +85,12 @@ class Recorder
 
     void openDataFolder(const boost::filesystem::path& dataFolder)
     {
-        if(dataFolder == imageFolder.parent_path().parent_path())
-            return;
-        
-        auto now = std::chrono::system_clock::now();
-        std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
-        std::tm localTime = *std::localtime(&nowTime);
-        std::ostringstream runFolderName;
-        runFolderName << "collect_" << std::put_time(&localTime, "%Y-%m-%d_%H-%M-%S");
-
-        boost::filesystem::path runFolder = dataFolder/ runFolderName.str();
-
-        imageFolder = runFolder / "images";
+        imageFolder = dataFolder / "images";
         boost::filesystem::create_directories(imageFolder);
 
-        ROS_INFO_STREAM("Create folder " + boost::filesystem::absolute(runFolder).string());
+        ROS_INFO_STREAM("Create folder " + boost::filesystem::absolute(dataFolder).string());
 
-        labelFile = std::ofstream((runFolder/ "labels.csv").string());
+        labelFile = std::ofstream((dataFolder/ "labels.csv").string());
     }
 
     void closeDataFolder()
@@ -198,8 +188,12 @@ class Recorder
             }
             else
             {
-                closeDataFolder();
-                openDataFolder(config.data_folder);
+                boost::filesystem::path dataFolder = makeFilename(config.data_folder);
+                if(dataFolder != imageFolder.parent_path())
+                {
+                    closeDataFolder();
+                    openDataFolder(dataFolder);
+                }
             }
         }
         if(level & 0x4)
@@ -216,6 +210,17 @@ class Recorder
             else
                 recordButton = config.record_button;
         }
+    }
+
+    boost::filesystem::path makeFilename(const std::string& pattern)
+    {
+        std::time_t t = std::time(nullptr);
+        std::tm tm = *std::localtime(&t);
+
+        char buffer[256];
+        std::strftime(buffer, sizeof(buffer), pattern.c_str(), &tm);
+
+        return boost::filesystem::path(buffer);
     }
 };
 
