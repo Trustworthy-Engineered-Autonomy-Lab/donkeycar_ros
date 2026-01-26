@@ -189,10 +189,12 @@ class Recorder
             else
             {
                 boost::filesystem::path dataFolder = makeFilename(config.data_folder);
+                ros::NodeHandle("~").setParam("data_folder_resolved", dataFolder.string());
                 if(dataFolder != imageFolder.parent_path())
                 {
                     closeDataFolder();
                     openDataFolder(dataFolder);
+                    imageCount = 0;
                 }
             }
         }
