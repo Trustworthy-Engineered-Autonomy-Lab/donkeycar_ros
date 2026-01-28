@@ -39,6 +39,7 @@ class Recorder
         downsampleRate = 1;
         recordButton = 5;
         recordButtonState = 0;
+        compressOnExit = false;
 
         syncSub.registerCallback(boost::bind(&Recorder::syncCallback,this,boost::placeholders::_1,boost::placeholders::_2));
 
@@ -51,7 +52,12 @@ class Recorder
 
     ~Recorder()
     {
-
+        boost::filesystem::path dataFolder = imageFolder.parent_path();
+        if(boost::filesystem::exists(dataFolder))
+        {
+            labelFile.close();
+            compressDataFile(dataFolder);
+        }
     }
 
     using ApproxSyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, controller::motion_cmd>;
@@ -83,6 +89,7 @@ class Recorder
     int downsampleRate;
 
     bool dataFolderCreated;
+    bool compressOnExit;
 
     void joyCallback(const sensor_msgs::Joy::ConstPtr& msg)
     {
@@ -211,6 +218,10 @@ class Recorder
             else
                 recordButton = config.record_button;
         }
+        if(level & 0xF)
+        {
+            compressOnExit = config.compress_on_exit;
+        }
     }
 
     boost::filesystem::path makeFilename(const std::string& pattern)
@@ -222,6 +233,19 @@ class Recorder
         std::strftime(buffer, sizeof(buffer), pattern.c_str(), &tm);
 
         return boost::filesystem::path(buffer);
+    }
+
+    void compressDataFile(const boost::filesystem::path& dataFolder)
+    {
+        boost::filesystem::path tarFolder = dataFolder.parent_path();
+        boost::filesystem::path tarName = dataFolder.filename().replace_extension("tar.gz");\
+        boost::filesystem::path tarPath = tarFolder / tarName;
+
+        std::string cmd = "tar -czf '" +  tarPath.string()  + "' -C '" + dataFolder.string() + "' .";
+        if(!std::system(cmd.c_str()))
+            ROS_ERROR("Failed to compress the data folder");
+        else
+            ROS_INFO_STREAM("Saved compressed data folder to " + tarPath.string());
     }
 };
 
