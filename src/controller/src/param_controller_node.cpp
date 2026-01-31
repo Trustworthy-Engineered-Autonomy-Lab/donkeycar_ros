@@ -28,12 +28,13 @@ class ParamController: controller::Controller
         if(level & 0x1)
         {
             throttle = config.throttle_value;
+            this->controlThrottle(throttle);
         }
         if(level & 0x2)
         {
             steer = config.steer_angle;
+            this->controlSteer(steer);
         }
-        this->control(throttle, steer);
     }
 };
 

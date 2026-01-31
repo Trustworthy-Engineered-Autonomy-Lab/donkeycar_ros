@@ -25,8 +25,9 @@ class Recorder
     public:
     Recorder(ros::NodeHandle& nodeHandle):
     imageSub(nodeHandle, "/camera/image_raw", 10),
-    motionSub(nodeHandle, "/combined_motion_cmd", 10),
-    syncSub(ApproxSyncPolicy(10), imageSub, motionSub)
+    steerSub(nodeHandle, "/combined_steer", 10),
+    throttleSub(nodeHandle, "/combined_throttle", 10),
+    syncSub(ApproxSyncPolicy(10), imageSub, steerSub, throttleSub)
     {
         std::string nodeName = ros::this_node::getName();
         // boost::filesystem::path dataFolder = nodeHandle.param<std::string>(nodeName + "/data_folder", "data");
@@ -41,7 +42,7 @@ class Recorder
         recordButtonState = 0;
         compressOnExit = false;
 
-        syncSub.registerCallback(boost::bind(&Recorder::syncCallback,this,boost::placeholders::_1,boost::placeholders::_2));
+        syncSub.registerCallback(boost::bind(&Recorder::syncCallback,this,boost::placeholders::_1,boost::placeholders::_2, boost::placeholders::_3));
 
         joySub = nodeHandle.subscribe<sensor_msgs::Joy>("joy", 10, boost::bind(&Recorder::joyCallback, this, boost::placeholders::_1));
         joyFeedbackPub = nodeHandle.advertise<sensor_msgs::JoyFeedbackArray>("/joy/set_feedback", 10);
@@ -60,14 +61,17 @@ class Recorder
         }
     }
 
-    using ApproxSyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, donkeycar_msgs::motion_cmd>;
+    using ApproxSyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, 
+                                                                            donkeycar_msgs::motion_cmd,
+                                                                            donkeycar_msgs::motion_cmd>;
 
     private:
 
     dynamic_reconfigure::Server<recorder::recorderConfig> server;
 
     message_filters::Subscriber<sensor_msgs::Image> imageSub;
-    message_filters::Subscriber<donkeycar_msgs::motion_cmd> motionSub;
+    message_filters::Subscriber<donkeycar_msgs::motion_cmd> steerSub;
+    message_filters::Subscriber<donkeycar_msgs::motion_cmd> throttleSub;
     message_filters::Synchronizer<ApproxSyncPolicy> syncSub;
     ros::Subscriber joySub;
     ros::Publisher joyFeedbackPub;
@@ -131,7 +135,10 @@ class Recorder
     }
 
 
-    void syncCallback(const sensor_msgs::ImageConstPtr& image, const boost::shared_ptr<const donkeycar_msgs::motion_cmd>& motion)
+    void syncCallback(const sensor_msgs::ImageConstPtr& image, 
+        const boost::shared_ptr<const donkeycar_msgs::motion_cmd>& steerMsg,
+        const boost::shared_ptr<const donkeycar_msgs::motion_cmd>& throttleMsg
+    )
     {
         bool enable = enableFromCfg || enableFromJs;
 
@@ -167,7 +174,7 @@ class Recorder
             boost::filesystem::path imageFile = imageFolder / imageName;
 
             cv::imwrite(imageFile.string(), cvImage->image);
-            labelFile << imageName << "," << motion->steer << "," << motion->throttle << std::endl;
+            labelFile << imageName << "," << steerMsg->value << "," << throttleMsg->value << std::endl;
             ROS_DEBUG("Image %s saved!", imageFile.string().c_str());
             
             std_msgs::UInt64 msg;
