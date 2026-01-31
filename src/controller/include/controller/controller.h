@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include <controller/motion_cmd.h>
+#include <donkeycar_msgs/motion_cmd.h>
 
 #include <controller/ControllerConfig.h>
 #include <dynamic_reconfigure/server.h>
@@ -14,7 +14,7 @@ namespace controller{
         Controller():server(ros::NodeHandle("~controller"))
         {
             ros::NodeHandle nodeHandle("~");
-            cmdPub = nodeHandle.advertise<controller::motion_cmd>("/motion_cmd",10);
+            cmdPub = nodeHandle.advertise<donkeycar_msgs::motion_cmd>("/motion_cmd",10);
 
             nodeName = ros::this_node::getName();
 
@@ -36,7 +36,7 @@ namespace controller{
         }
         void control(float throttle, float steer)
         {
-            controller::motion_cmd cmd;
+            donkeycar_msgs::motion_cmd cmd;
             cmd.header.stamp = ros::Time::now();
             cmd.header.frame_id = nodeName;
             

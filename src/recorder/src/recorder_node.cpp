@@ -13,7 +13,7 @@
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 
-#include <controller/motion_cmd.h>
+#include <donkeycar_msgs/motion_cmd.h>
 #include <recorder/recorderConfig.h>
 
 #include <boost/filesystem.hpp>
@@ -60,14 +60,14 @@ class Recorder
         }
     }
 
-    using ApproxSyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, controller::motion_cmd>;
+    using ApproxSyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, donkeycar_msgs::motion_cmd>;
 
     private:
 
     dynamic_reconfigure::Server<recorder::recorderConfig> server;
 
     message_filters::Subscriber<sensor_msgs::Image> imageSub;
-    message_filters::Subscriber<controller::motion_cmd> motionSub;
+    message_filters::Subscriber<donkeycar_msgs::motion_cmd> motionSub;
     message_filters::Synchronizer<ApproxSyncPolicy> syncSub;
     ros::Subscriber joySub;
     ros::Publisher joyFeedbackPub;
@@ -131,7 +131,7 @@ class Recorder
     }
 
 
-    void syncCallback(const sensor_msgs::ImageConstPtr& image, const boost::shared_ptr<const controller::motion_cmd>& motion)
+    void syncCallback(const sensor_msgs::ImageConstPtr& image, const boost::shared_ptr<const donkeycar_msgs::motion_cmd>& motion)
     {
         bool enable = enableFromCfg || enableFromJs;
 

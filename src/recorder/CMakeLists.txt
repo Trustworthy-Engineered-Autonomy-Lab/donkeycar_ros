@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_filters
   cv_bridge
   dynamic_reconfigure
+  donkeycar_msgs
 )
 
 ## System dependencies are found with CMake's conventions
