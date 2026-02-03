@@ -1,6 +1,6 @@
 <launch>
 
-    <include file="$(find donkeycar)/launch/drive.launch"/>
+    <include file="$(find donkeycar_bringup)/launch/drive.launch"/>
 
     <env name="GSCAM_CONFIG" value="nvarguscamerasrc 
                                     ! video/x-raw(memory:NVMM), width=3280, height=2464, format=NV12, framerate=21/1 
@@ -13,8 +13,8 @@
     </node>
 
     <node pkg="recorder" type="recorder_node" name="recorder_node" output="screen">
-        <param name="data_folder" value="$(find donkeycar)/data/collect_%Y_%m_%d_%H_%M_%S"/>
+        <param name="data_folder" value="$(find donkeycar_bringup)/data/collect_%Y_%m_%d_%H_%M_%S"/>
         <param name="record_button" value="5"/>
-        <param name="downsample_rate" value="30"/>
+        <param name="downsample_rate" value="1"/>
     </node>
 </launch>

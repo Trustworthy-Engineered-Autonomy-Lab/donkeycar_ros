@@ -1,5 +1,5 @@
 <launch>
-    <include file="$(find donkeycar)/launch/drive.launch"/>
+    <include file="$(find donkeycar_bringup)/launch/drive.launch"/>
 
     <env name="GSCAM_CONFIG" value="nvarguscamerasrc 
                                     ! video/x-raw(memory:NVMM), width=3280, height=2464, format=NV12, framerate=21/1 
@@ -15,7 +15,7 @@
         <param name="steer_ratio" value="-1"/>
         <param name="backend" value="tensorrt"/>
         
-        <param name="model_file" value="$(find donkeycar)/models/best.onnx"/>
+        <param name="model_file" value="$(find donkeycar_bringup)/models/best.onnx"/>
         <param name="input_name" value="image"/>
         <param name="output_name" value="steer"/>
 
@@ -25,7 +25,7 @@
     <!-- <node pkg="controller" type="nn_controller_node" name="nn_controller_node" output="screen">
         <param name="steer_ratio" value="1"/>
         <param name="backend" value="tensorflow"/>
-        <param name="model_file" value="$(find donkeycar)/models/0206"/>
+        <param name="model_file" value="$(find donkeycar_bringup)/models/0206"/>
         <param name="roi/x" value="0"/>
         <param name="roi/y" value="80"/>
         <param name="roi/width" value="224"/>
