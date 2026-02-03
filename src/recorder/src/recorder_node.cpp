@@ -1,4 +1,5 @@
 #include <ros/ros.h>
+#include <std_msgs/UInt64.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/Joy.h>
 #include <sensor_msgs/JoyFeedbackArray.h>
@@ -12,22 +13,24 @@
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 
-#include <controller/motion_cmd.h>
+#include <donkeycar_msgs/motion_cmd.h>
 #include <recorder/recorderConfig.h>
 
 #include <boost/filesystem.hpp>
 #include <fstream>
+#include <ctime>
 
 class Recorder
 {
     public:
     Recorder(ros::NodeHandle& nodeHandle):
     imageSub(nodeHandle, "/camera/image_raw", 10),
-    motionSub(nodeHandle, "/combined_motion_cmd", 10),
-    syncSub(ApproxSyncPolicy(10), imageSub, motionSub)
+    steerSub(nodeHandle, "/combined_steer", 10),
+    throttleSub(nodeHandle, "/combined_throttle", 10),
+    syncSub(ApproxSyncPolicy(10), imageSub, steerSub, throttleSub)
     {
         std::string nodeName = ros::this_node::getName();
-        boost::filesystem::path dataFolder = nodeHandle.param<std::string>(nodeName + "/data_folder", "data");
+        // boost::filesystem::path dataFolder = nodeHandle.param<std::string>(nodeName + "/data_folder", "data");
         
         imageCount = 0;
         savedImageCount = 0;
@@ -37,37 +40,50 @@ class Recorder
         downsampleRate = 1;
         recordButton = 5;
         recordButtonState = 0;
+        compressOnExit = false;
 
-        syncSub.registerCallback(boost::bind(&Recorder::syncCallback,this,boost::placeholders::_1,boost::placeholders::_2));
+        syncSub.registerCallback(boost::bind(&Recorder::syncCallback,this,boost::placeholders::_1,boost::placeholders::_2, boost::placeholders::_3));
 
         joySub = nodeHandle.subscribe<sensor_msgs::Joy>("joy", 10, boost::bind(&Recorder::joyCallback, this, boost::placeholders::_1));
         joyFeedbackPub = nodeHandle.advertise<sensor_msgs::JoyFeedbackArray>("/joy/set_feedback", 10);
         server.setCallback(boost::bind(&Recorder::serverCallback,this,boost::placeholders::_1,boost::placeholders::_2));
+
+        savedCountPub = nodeHandle.advertise<std_msgs::UInt64>("/recorder/saved_count", 10);
     }
 
     ~Recorder()
     {
-
+        boost::filesystem::path dataFolder = imageFolder.parent_path();
+        if(boost::filesystem::exists(dataFolder))
+        {
+            labelFile.close();
+            compressDataFile(dataFolder);
+        }
     }
 
-    using ApproxSyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, controller::motion_cmd>;
+    using ApproxSyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, 
+                                                                            donkeycar_msgs::motion_cmd,
+                                                                            donkeycar_msgs::motion_cmd>;
 
     private:
 
     dynamic_reconfigure::Server<recorder::recorderConfig> server;
 
     message_filters::Subscriber<sensor_msgs::Image> imageSub;
-    message_filters::Subscriber<controller::motion_cmd> motionSub;
+    message_filters::Subscriber<donkeycar_msgs::motion_cmd> steerSub;
+    message_filters::Subscriber<donkeycar_msgs::motion_cmd> throttleSub;
     message_filters::Synchronizer<ApproxSyncPolicy> syncSub;
     ros::Subscriber joySub;
     ros::Publisher joyFeedbackPub;
+    ros::Publisher savedCountPub;
 
     boost::filesystem::path imageFolder;
+    boost::filesystem::path labelFilePath;
     std::ofstream labelFile;
 
-    unsigned imageCount;
-    unsigned savedImageCount;
-    unsigned lastSavedImageCount;
+    uint64_t imageCount;
+    uint64_t savedImageCount;
+    uint64_t lastSavedImageCount;
 
     bool enableFromJs;
     bool enableFromCfg;
@@ -77,32 +93,7 @@ class Recorder
     int downsampleRate;
 
     bool dataFolderCreated;
-
-    void openDataFolder(const boost::filesystem::path& dataFolder)
-    {
-        if(dataFolder == imageFolder.parent_path().parent_path())
-            return;
-        
-        auto now = std::chrono::system_clock::now();
-        std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
-        std::tm localTime = *std::localtime(&nowTime);
-        std::ostringstream runFolderName;
-        runFolderName << "collect_" << std::put_time(&localTime, "%Y-%m-%d_%H-%M-%S");
-
-        boost::filesystem::path runFolder = dataFolder/ runFolderName.str();
-
-        imageFolder = runFolder / "images";
-        boost::filesystem::create_directories(imageFolder);
-
-        ROS_INFO_STREAM("Create folder " + boost::filesystem::absolute(runFolder).string());
-
-        labelFile = std::ofstream((runFolder/ "labels.csv").string());
-    }
-
-    void closeDataFolder()
-    {
-        labelFile.close();
-    }
+    bool compressOnExit;
 
     void joyCallback(const sensor_msgs::Joy::ConstPtr& msg)
     {
@@ -127,7 +118,7 @@ class Recorder
             {
                 if(msg->buttons[recordButton] != recordButtonState)
                 {
-                    ROS_INFO("Stop recording, saved %d images, there are %d images in total", savedImageCount - lastSavedImageCount, savedImageCount);
+                    ROS_INFO("Stop recording, saved %ld images, there are %ld images in total", savedImageCount - lastSavedImageCount, savedImageCount);
                     lastSavedImageCount = savedImageCount;
                 }
 
@@ -144,7 +135,10 @@ class Recorder
     }
 
 
-    void syncCallback(const sensor_msgs::ImageConstPtr& image, const boost::shared_ptr<const controller::motion_cmd>& motion)
+    void syncCallback(const sensor_msgs::ImageConstPtr& image, 
+        const boost::shared_ptr<const donkeycar_msgs::motion_cmd>& steerMsg,
+        const boost::shared_ptr<const donkeycar_msgs::motion_cmd>& throttleMsg
+    )
     {
         bool enable = enableFromCfg || enableFromJs;
 
@@ -165,13 +159,27 @@ class Recorder
             }
 
             savedImageCount += 1;
+            if(!boost::filesystem::exists(imageFolder))
+            {
+                boost::filesystem::create_directories(imageFolder);
+                ROS_INFO_STREAM("Created folder " + boost::filesystem::absolute(imageFolder).string());
+            }
+            if(!boost::filesystem::exists(labelFilePath))
+            {
+                labelFile = std::ofstream(labelFilePath.string());
+                ROS_INFO_STREAM("Opened label file " + labelFilePath.string());
+            }
+
             std::string imageName = std::to_string(savedImageCount) + ".jpg";
-            boost::filesystem::path imageFile = imageFolder/ imageName;
+            boost::filesystem::path imageFile = imageFolder / imageName;
 
             cv::imwrite(imageFile.string(), cvImage->image);
-            labelFile << imageName << "," << motion->steer << "," << motion->throttle << std::endl;
+            labelFile << imageName << "," << steerMsg->value << "," << throttleMsg->value << std::endl;
             ROS_DEBUG("Image %s saved!", imageFile.string().c_str());
             
+            std_msgs::UInt64 msg;
+            msg.data = savedImageCount;
+            savedCountPub.publish(msg);
         }
 
         imageCount += 1;
@@ -191,8 +199,16 @@ class Recorder
             }
             else
             {
-                closeDataFolder();
-                openDataFolder(config.data_folder);
+                boost::filesystem::path dataFolder = makeFilename(config.data_folder);
+                ros::NodeHandle("~").setParam("data_folder_resolved", dataFolder.string());
+                if(dataFolder != imageFolder.parent_path())
+                {
+                    labelFile.close();
+                    imageFolder = dataFolder / "images";
+                    labelFilePath = imageFolder.parent_path() / "labels.csv";
+                    imageCount = 0;
+                    savedImageCount = 0;
+                }
             }
         }
         if(level & 0x4)
@@ -209,6 +225,34 @@ class Recorder
             else
                 recordButton = config.record_button;
         }
+        if(level & 0xF)
+        {
+            compressOnExit = config.compress_on_exit;
+        }
+    }
+
+    boost::filesystem::path makeFilename(const std::string& pattern)
+    {
+        std::time_t t = std::time(nullptr);
+        std::tm tm = *std::localtime(&t);
+
+        char buffer[256];
+        std::strftime(buffer, sizeof(buffer), pattern.c_str(), &tm);
+
+        return boost::filesystem::path(buffer);
+    }
+
+    void compressDataFile(const boost::filesystem::path& dataFolder)
+    {
+        boost::filesystem::path tarFolder = dataFolder.parent_path();
+        boost::filesystem::path tarName = dataFolder.filename().replace_extension("tar.gz");\
+        boost::filesystem::path tarPath = tarFolder / tarName;
+
+        std::string cmd = "tar -czf '" +  tarPath.string()  + "' -C '" + dataFolder.string() + "' .";
+        if(!std::system(cmd.c_str()))
+            ROS_ERROR("Failed to compress the data folder");
+        else
+            ROS_INFO_STREAM("Saved compressed data folder to " + tarPath.string());
     }
 };
 

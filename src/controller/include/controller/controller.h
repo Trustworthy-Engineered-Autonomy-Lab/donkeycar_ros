@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include <controller/motion_cmd.h>
+#include <donkeycar_msgs/motion_cmd.h>
 
 #include <controller/ControllerConfig.h>
 #include <dynamic_reconfigure/server.h>
@@ -14,7 +14,8 @@ namespace controller{
         Controller():server(ros::NodeHandle("~controller"))
         {
             ros::NodeHandle nodeHandle("~");
-            cmdPub = nodeHandle.advertise<controller::motion_cmd>("/motion_cmd",10);
+            steerPub = nodeHandle.advertise<donkeycar_msgs::motion_cmd>("/steer",10);
+            throttlePub = nodeHandle.advertise<donkeycar_msgs::motion_cmd>("/throttle",10);
 
             nodeName = ros::this_node::getName();
 
@@ -34,26 +35,39 @@ namespace controller{
             ROS_INFO("%-20s | %-15f ", "Steer ratio", steerRatio);
             ROS_INFO("-----------------------------------------------");
         }
-        void control(float throttle, float steer)
+
+        void controlSteer(float steer)
         {
-            controller::motion_cmd cmd;
-            cmd.header.stamp = ros::Time::now();
-            cmd.header.frame_id = nodeName;
+            donkeycar_msgs::motion_cmd steerMsg;
+            steerMsg.header.stamp = ros::Time::now();
+            steerMsg.value = steer * steerRatio;
+            steerMsg.source = nodeName;
             
+            steerPub.publish(steerMsg);
+
+            ROS_DEBUG("Sent steer cmd %f from node %s", steer, nodeName.c_str());
+        }
+
+        void controlThrottle(float throttle)
+        {
+            donkeycar_msgs::motion_cmd throttleMsg;
+            throttleMsg.header.stamp = ros::Time::now();
+            throttleMsg.source = nodeName;
+
             if(throttle > 0)
-                cmd.throttle = throttle * throttleForwardRatio;
+                throttleMsg.value = throttle * throttleForwardRatio;
             else
-                cmd.throttle = throttle * throttleReverseRatio;
+                throttleMsg.value = throttle * throttleReverseRatio;
 
-            cmd.steer = steer * steerRatio;
-            cmdPub.publish(cmd);
+            throttlePub.publish(throttleMsg);
 
-            ROS_DEBUG("Sent motion cmd: throttle %f steer %f from node %s", cmd.throttle, cmd.steer, nodeName.c_str());
+            ROS_DEBUG("Sent steerthrottle cmd %f from node %s", throttle, nodeName.c_str());
         }
 
         private:
 
-        ros::Publisher cmdPub;
+        ros::Publisher steerPub;
+        ros::Publisher throttlePub;
         ros::Timer timer;
         std::string nodeName;
         float throttleForwardRatio;

@@ -1,6 +1,5 @@
 #include <ros/ros.h>
-#include <controller/motion_cmd.h>
-#include <controller/controller.h>
+#include <donkeycar_msgs/motion_cmd.h>
 #include <array>
 #include <numeric>
 #include <unordered_map>
@@ -15,25 +14,31 @@ namespace actuator{
         Actuator():server(ros::NodeHandle("~actuator"))
         {
             ros::NodeHandle nodeHandle("~");
+
+            nodeName = ros::this_node::getName();
             
             timer = nodeHandle.createTimer(ros::Duration(1.0/20.0), boost::bind(&Actuator::timerCallback, this, boost::placeholders::_1));
             server.setCallback(boost::bind(&Actuator::serverCallback,this,boost::placeholders::_1,boost::placeholders::_2));
             
 
-            cmdSub = nodeHandle.subscribe<controller::motion_cmd>("/motion_cmd",10, 
-                boost::bind(&Actuator::motionCallback, this, boost::placeholders::_1));
-            combinedCmdPub = nodeHandle.advertise<controller::motion_cmd>("/combined_motion_cmd",10);
+            steerSub = nodeHandle.subscribe<donkeycar_msgs::motion_cmd>("/steer",10, 
+                boost::bind(&Actuator::steerCallback, this, boost::placeholders::_1));
+            throttleSub = nodeHandle.subscribe<donkeycar_msgs::motion_cmd>("/throttle",10, 
+                boost::bind(&Actuator::throttleCallback, this, boost::placeholders::_1));
+            
+            combinedSteerPub = nodeHandle.advertise<donkeycar_msgs::motion_cmd>("/combined_steer",10);
+            combinedThrottlePub = nodeHandle.advertise<donkeycar_msgs::motion_cmd>("/combined_throttle",10);
         }
 
-        virtual void actuate(float throttle, float steer)
-        {
-            
-        }
+        virtual void actuate(float throttle, float steer) = 0;
 
         private:
-        ros::Subscriber cmdSub;
-        ros::Publisher combinedCmdPub;
+        ros::Subscriber steerSub;
+        ros::Subscriber throttleSub;
+        ros::Publisher combinedSteerPub;
+        ros::Publisher combinedThrottlePub;
         ros::Timer timer;
+        std::string nodeName;
 
         std::unordered_map<std::string, std::array<float, 2>> motionCmds;
         dynamic_reconfigure::Server<actuator::ActuatorConfig> server;
@@ -59,24 +64,34 @@ namespace actuator{
             else if(combinedSteer < -1)
                 combinedSteer = -1;
             
-            controller::motion_cmd combinedCmd;
-            combinedCmd.header.stamp = ros::Time::now();
-            combinedCmd.steer = combinedSteer;
-            combinedCmd.throttle = combinedThrottle;
+            auto now = ros::Time::now();
+            donkeycar_msgs::motion_cmd combinedSteerMsg;
+            combinedSteerMsg.header.stamp = now;
+            combinedSteerMsg.value = combinedSteer;
+            combinedSteerMsg.source = nodeName;
+            combinedSteerPub.publish(combinedSteerMsg);
 
-            combinedCmdPub.publish(combinedCmd);
+            donkeycar_msgs::motion_cmd combinedThrottleMsg;
+            combinedThrottleMsg.header.stamp = now;
+            combinedThrottleMsg.value = combinedThrottle;
+            combinedThrottleMsg.source = nodeName;
+            combinedThrottlePub.publish(combinedThrottleMsg);
 
-            ROS_DEBUG("Combine motion cmd: throttle %f steer %f", combinedThrottle, combinedSteer);
+            ROS_DEBUG("Sent combined motion cmd: throttle %f steer %f from node %s", combinedThrottle, combinedSteer, nodeName.c_str());
             
             this -> actuate(combinedThrottle, combinedSteer);
         }
 
-        void motionCallback(const boost::shared_ptr<const controller::motion_cmd>& msg)
+        void steerCallback(const boost::shared_ptr<const donkeycar_msgs::motion_cmd>& msg)
         {
-            ROS_DEBUG("Received motion cmd: throttle %f steer %f from node: %s", msg->throttle, msg->steer, msg->header.frame_id.c_str());
-            
-            motionCmds[msg->header.frame_id][0] = msg->throttle;
-            motionCmds[msg->header.frame_id][1] = msg->steer;
+            ROS_DEBUG("Received steer cmd %f from node: %s", msg->value, msg->source.c_str());
+            motionCmds[msg->source][1] = msg->value;
+        }
+
+        void throttleCallback(const boost::shared_ptr<const donkeycar_msgs::motion_cmd>& msg)
+        {
+            ROS_DEBUG("Received throttle cmd %f from node: %s", msg->value, msg->source.c_str());
+            motionCmds[msg->source][0] = msg->value;
         }
 
         void serverCallback(actuator::ActuatorConfig &config, uint32_t level)

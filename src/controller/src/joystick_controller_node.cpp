@@ -58,7 +58,8 @@ class JoystickController: controller::Controller
             ROS_WARN_ONCE("Invaild joystick axis number %d for steer.", steer_axis);
         }
 
-        control(throttle, steer);
+        controlThrottle(throttle);
+        controlSteer(steer);
     }
 
     void serverCallback(controller::JoystickControllerConfig &config, uint32_t level)

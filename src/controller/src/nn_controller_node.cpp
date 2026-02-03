@@ -252,7 +252,7 @@ class NNController: controller::Controller
             return;
         }
 
-        this->control(0, *reinterpret_cast<float*>(outputBuffer));
+        this->controlSteer(*reinterpret_cast<float*>(outputBuffer));
 
         ROS_DEBUG("Run inference successfully %f", *reinterpret_cast<float*>(outputBuffer));
     }
