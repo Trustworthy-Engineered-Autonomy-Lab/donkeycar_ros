@@ -55,10 +55,13 @@
   <build_depend>inferencer</build_depend>
   <build_depend>image_transport</build_depend>
   <build_depend>donkeycar_msgs</build_depend>
+  <build_depend>dynamic_reconfigure</build_depend>
   <!-- <build_depend>rqt_gui</build_depend>
   <build_depend>rqt_gui_cpp</build_depend> -->
   <build_export_depend>roscpp</build_export_depend>
   <build_export_depend>std_msgs</build_export_depend>
+  <build_export_depend>donkeycar_msgs</build_export_depend>
+  <build_export_depend>dynamic_reconfigure</build_export_depend>
   <exec_depend>roscpp</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>rospack</exec_depend>

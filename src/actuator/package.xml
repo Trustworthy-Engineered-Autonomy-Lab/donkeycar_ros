@@ -53,9 +53,11 @@
   <build_depend>roscpp</build_depend>
   <build_depend>std_msgs</build_depend>
   <build_depend>donkeycar_msgs</build_depend>
-  <build_export_depend>controller</build_export_depend>
+  <build_depend>dynamic_reconfigure</build_depend>
   <build_export_depend>roscpp</build_export_depend>
   <build_export_depend>std_msgs</build_export_depend>
+  <build_export_depend>donkeycar_msgs</build_export_depend>
+  <build_export_depend>dynamic_reconfigure</build_export_depend>
   <exec_depend>controller</exec_depend>
   <exec_depend>roscpp</exec_depend>
   <exec_depend>std_msgs</exec_depend>

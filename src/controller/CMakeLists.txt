@@ -114,7 +114,7 @@ generate_dynamic_reconfigure_options(
 catkin_package(
  INCLUDE_DIRS include
 #  LIBRARIES controller
- CATKIN_DEPENDS roscpp std_msgs
+ CATKIN_DEPENDS roscpp std_msgs donkeycar_msgs dynamic_reconfigure
 #  DEPENDS system_lib
 )
 
@@ -214,11 +214,11 @@ target_link_libraries(param_${PROJECT_NAME}_node
 # )
 
 ## Mark cpp header files for installation
-# install(DIRECTORY include/${PROJECT_NAME}/
-#   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-#   FILES_MATCHING PATTERN "*.h"
-#   PATTERN ".svn" EXCLUDE
-# )
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  FILES_MATCHING PATTERN "*.h"
+  PATTERN ".svn" EXCLUDE
+)
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
 # install(FILES
