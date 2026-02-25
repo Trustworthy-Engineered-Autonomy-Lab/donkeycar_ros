@@ -3,11 +3,19 @@
     <include file="$(find donkeycar_bringup)/launch/drive.launch"/>
 
     <env name="GSCAM_CONFIG" value="nvarguscamerasrc 
-                                    ! video/x-raw(memory:NVMM), width=3280, height=2464, format=NV12, framerate=21/1 
-                                    ! nvvidconv flip-method=2
-                                    ! video/x-raw, width=224, height=224, format=BGRx
+                                    ! video/x-raw(memory:NVMM),width=3280,height=2464,framerate=21/1 
+                                    ! tee name=t 
+                                    t. ! queue 
+                                    ! nvvidconv flip-method=2 
+                                    ! nvv4l2h264enc insert-sps-pps=1 bitrate=4000000 
+                                    ! h264parse config-interval=1 
+                                    ! rtph264pay pt=96 
+                                    ! udpsink host=ece-d4100-w02.ad.ufl.edu port=5000 
+                                    t. ! queue 
+                                    ! nvvidconv flip-method=2 
+                                    ! video/x-raw,format=BGRx,width=224,height=224
                                     ! videocrop left=0 right=0 top=80 bottom=0
-                                    ! videoconvert " />
+                                    ! videoconvert" />
 
     <node pkg="gscam" type="gscam" name="camera">
     </node>
