@@ -1,6 +1,8 @@
 <launch>
     <include file="$(find donkeycar_bringup)/launch/drive.launch"/>
 
+    <arg name="model_file" default="$(find donkeycar_bringup)/models/best.onnx"/>
+
     <env name="GSCAM_CONFIG" value="nvarguscamerasrc 
                                     ! video/x-raw(memory:NVMM), width=3280, height=2464, format=NV12, framerate=21/1 
                                     ! nvvidconv flip-method=2
@@ -15,7 +17,7 @@
         <param name="steer_ratio" value="-1"/>
         <param name="backend" value="tensorrt"/>
         
-        <param name="model_file" value="$(find donkeycar_bringup)/models/best.onnx"/>
+        <param name="model_file" value="$(arg model_file)"/>
         <param name="input_name" value="image"/>
         <param name="output_name" value="steer"/>
 
