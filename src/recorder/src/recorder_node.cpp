@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <std_msgs/UInt64.h>
 #include <sensor_msgs/Image.h>
+#include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/Joy.h>
 #include <sensor_msgs/JoyFeedbackArray.h>
 #include <sensor_msgs/JoyFeedback.h>
@@ -151,11 +152,12 @@ class Recorder
             cv_bridge::CvImageConstPtr cvImage;
             try
             {
-                cvImage = cv_bridge::toCvShare(image, image->encoding);
+                cvImage = cv_bridge::toCvShare(image, sensor_msgs::image_encodings::BGR8);
             }
             catch(cv_bridge::Exception& e)
             {
                 ROS_ERROR("cv_bridge exception: %s", e.what());
+                return;
             }
 
             savedImageCount += 1;
@@ -272,4 +274,3 @@ int main(int argc, char** argv)
 
     return 0;
 }
-

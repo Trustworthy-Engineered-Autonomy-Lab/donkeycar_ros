@@ -12,6 +12,8 @@
         <param name="throttle_axis" value="4" />
         <param name="steer_axis" value="0" />
     </node>
+    <node pkg="controller" type="param_controller_node" name="param_controller_node">
+    </node>
     <node pkg="actuator" type="pca9685_actuator_node" name="pca9685_actuator_node" output="screen">
         <!-- PWM Frequency and Bus Configuration -->
         <param name="bus_device" value="/dev/i2c-7" />

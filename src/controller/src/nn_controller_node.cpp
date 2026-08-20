@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <ros/package.h>
 #include <sensor_msgs/Image.h>
+#include <std_msgs/Float64.h>
 #include <image_transport/image_transport.h>
 
 #include <fstream>
@@ -28,6 +29,7 @@ class NNController: controller::Controller
         inferencer(nullptr)
     {
         timer = nodeHandle.createTimer(ros::Duration(1), boost::bind(&NNController::timerCallback, this, boost::placeholders::_1));
+        intervalPub = ros::NodeHandle("~").advertise<std_msgs::Float64>("interval", 10);
     }
 
     ~NNController()
@@ -53,6 +55,7 @@ class NNController: controller::Controller
 
     image_transport::ImageTransport it;
     image_transport::Subscriber imageSub;
+    ros::Publisher intervalPub;
 
     void* outputBuffer;
     void* inputBuffer;
@@ -243,8 +246,16 @@ class NNController: controller::Controller
 
         imagePtr->image(roi).convertTo(imageMat, imagePtr->image.channels()==1 ? CV_32FC1 : CV_32FC3);
         
+        ros::Time start = ros::Time::now();
+        bool success = inferencer->infer();
+        ros::Time end = ros::Time::now();
+        double dt = (end - start).toSec();
 
-        if(!inferencer->infer())
+        std_msgs::Float64 dt_msg;
+        dt_msg.data = dt;
+        intervalPub.publish(dt_msg);
+
+        if(!success)
         {
             ROS_ERROR("Failed to run inference %s", inferencer->getErrorString().c_str());
             imageSub.shutdown();
