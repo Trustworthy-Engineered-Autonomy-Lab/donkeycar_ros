@@ -32,13 +32,29 @@ execute_process(
     COMMAND ${Python3_EXECUTABLE} -c "import tensorflow as tf; print(tf.sysconfig.get_include())"
     OUTPUT_VARIABLE TENSORFLOW_INCLUDE_DIR
     OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE TENSORFLOW_FIND_RESULT
+    ERROR_QUIET
 )
 
-execute_process(
-    COMMAND ${Python3_EXECUTABLE} -c "import tensorflow as tf; print(tf.sysconfig.get_lib())"
-    OUTPUT_VARIABLE TENSORFLOW_LIBRARY_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+if(TENSORFLOW_FIND_RESULT EQUAL 0)
+  set(TENSORFLOW_FOUND TRUE)
+else()
+  set(TENSORFLOW_FOUND FALSE)
+  message(WARNING "TensorFlow python package not found, skipping tensorflow_inferencer target")
+endif()
+
+if(TENSORFLOW_FOUND)
+  execute_process(
+      COMMAND ${Python3_EXECUTABLE} -c "import tensorflow as tf; print(tf.sysconfig.get_lib())"
+      OUTPUT_VARIABLE TENSORFLOW_LIBRARY_DIR
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+
+  set(TENSORFLOW_LIBRARIES
+      ${TENSORFLOW_LIBRARY_DIR}/libtensorflow_framework.so.2
+      ${TENSORFLOW_LIBRARY_DIR}/python/_pywrap_tensorflow_internal.so
+  )
+endif()
 
 execute_process(
     COMMAND ${Python3_EXECUTABLE} -c "from sysconfig import get_paths; print(get_paths()['include'])"
@@ -56,12 +72,6 @@ execute_process(
     COMMAND ${Python3_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('LDLIBRARY'))"
     OUTPUT_VARIABLE PYTHON3_LIBRARIES
     OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-
-
-set(TENSORFLOW_LIBRARIES
-    ${TENSORFLOW_LIBRARY_DIR}/libtensorflow_framework.so.2
-    ${TENSORFLOW_LIBRARY_DIR}/python/_pywrap_tensorflow_internal.so
 )
 
 
@@ -168,15 +178,19 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${CUDA_INCLUDE_DIRS}
-  ${TENSORFLOW_INCLUDE_DIR}
   ${PYTHON3_INCLUDE_DIR}
 )
 
+if(TENSORFLOW_FOUND)
+  include_directories(${TENSORFLOW_INCLUDE_DIR})
+endif()
+
 ## Declare a C++ library
-add_library(tensorflow_inferencer
-  src/tensorflow_inferencer.cpp
-  
-)
+if(TENSORFLOW_FOUND)
+  add_library(tensorflow_inferencer
+    src/tensorflow_inferencer.cpp
+  )
+endif()
 
 add_library(tensorrt_inferencer
   src/tensorrt_inferencer.cpp
@@ -209,11 +223,13 @@ target_link_libraries(tensorrt_inferencer
   ${TENSORRT_LIBRARIES}
 )
 
-target_link_libraries(tensorflow_inferencer
-  ${catkin_LIBRARIES}
-  ${TENSORFLOW_LIBRARIES}
-  ${PYTHON3_LIBRARIES}
-)
+if(TENSORFLOW_FOUND)
+  target_link_libraries(tensorflow_inferencer
+    ${catkin_LIBRARIES}
+    ${TENSORFLOW_LIBRARIES}
+    ${PYTHON3_LIBRARIES}
+  )
+endif()
 
 #############
 ## Install ##
